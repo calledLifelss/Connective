@@ -66,10 +66,6 @@ jobs:
           cp "/tmp/sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box" /tmp/dist/sing-box
           chmod 755 /tmp/dist/*
 
-      - name: build flutter
-        working-directory: frontend
-        run: flutter build linux --release
-
       - name: lab binaries (harness needs a real backend + core)
         run: |
           mkdir -p ~/.local/share/connective/lab-bin
@@ -77,6 +73,10 @@ jobs:
           mkdir -p ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64
           tar -xzf /tmp/sb.tar.gz -C ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64 \
             --strip-components=1
+
+      - name: build flutter
+        working-directory: frontend
+        run: flutter build linux --release
 
       - name: assemble bundle + rpm
         run: |
