@@ -34,6 +34,25 @@ jobs:
         working-directory: backend
         run: go test ./...
 
+      - name: build backend (also feeds the lab harness)
+        working-directory: backend
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\dist | Out-Null
+          go build -o C:\dist\connectived.exe ./cmd/connectived
+
+      - name: lab binaries (harness needs a real backend + core)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$HOME\.local\share\connective\lab-bin" | Out-Null
+          Copy-Item C:\dist\connectived.exe "$HOME\.local\share\connective\lab-bin\connectived.exe" -Force
+          $sbdir = "$HOME\.local\share\connective\lab-bin\sing-box-$env:SINGBOX_VERSION-windows-amd64"
+          New-Item -ItemType Directory -Force -Path $sbdir | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/sing-box-$env:SINGBOX_VERSION-windows-amd64.zip" -OutFile C:\sblab.zip
+          Expand-Archive C:\sblab.zip -DestinationPath C:\sblab -Force
+          Copy-Item "C:\sblab\sing-box-$env:SINGBOX_VERSION-windows-amd64\sing-box.exe" "$sbdir\sing-box.exe" -Force
+          if (-not (Test-Path "$sbdir\sing-box.exe")) { throw "lab sing-box missing" }
+
       - name: frontend checks
         working-directory: frontend
         run: |

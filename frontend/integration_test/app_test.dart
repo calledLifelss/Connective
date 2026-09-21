@@ -80,9 +80,13 @@ void main() {
     });
     // Real backend with isolated HOME (no pollution of the real store).
     homeDir = await Directory.systemTemp.createTemp('drivehome');
-    backend = await Process.start(
-        '${Platform.environment['HOME']}/.local/share/connective/lab-bin/connectived',
-        [],
+    final labHome = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        Directory.systemTemp.path;
+    final daemonBin = Platform.isWindows
+        ? '$labHome/.local/share/connective/lab-bin/connectived.exe'
+        : '$labHome/.local/share/connective/lab-bin/connectived';
+    backend = await Process.start(daemonBin, [],
         environment: {'HOME': homeDir.path});
     final sock =
         '${homeDir.path}/.local/share/connective/connectived.sock';
@@ -250,11 +254,17 @@ void main() {
 }
 
 Future<String> _singBox() async {
-  final home = Platform.environment['HOME']!;
-  final direct =
-      '$home/.local/share/connective/lab-bin/sing-box-1.14.1-linux-amd64/sing-box';
+  final home = Platform.environment['HOME'] ??
+      Platform.environment['USERPROFILE'] ??
+      Directory.systemTemp.path;
+  final dir = Platform.isWindows
+      ? 'sing-box-1.14.1-windows-amd64'
+      : 'sing-box-1.14.1-linux-amd64';
+  final bin = Platform.isWindows ? 'sing-box.exe' : 'sing-box';
+  final direct = '$home/.local/share/connective/lab-bin/$dir/$bin';
   if (await File(direct).exists()) return direct;
-  final res = await Process.run('which', ['sing-box']);
+  final finder = Platform.isWindows ? 'where' : 'which';
+  final res = await Process.run(finder, ['sing-box']);
   return (res.stdout as String).trim();
 }
 

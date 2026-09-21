@@ -29,12 +29,25 @@ class Lab {
     return p;
   }
 
-  String get labBin =>
-      '${Platform.environment['HOME']}/.local/share/connective/lab-bin';
+  static String get home {
+    // GitHub Windows runners (and Windows generally) have no $HOME;
+    // PowerShell ~ and our CI layout use USERPROFILE instead.
+    return Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        Directory.systemTemp.path;
+  }
+
+  String get labBin => '$home/.local/share/connective/lab-bin';
+
+  String get daemonBin =>
+      Platform.isWindows ? '$labBin/connectived.exe' : '$labBin/connectived';
 
   String get singBox {
-    final d = Directory('$labBin/sing-box-1.14.1-linux-amd64');
-    return '${d.path}/sing-box';
+    final dir = Platform.isWindows
+        ? 'sing-box-1.14.1-windows-amd64'
+        : 'sing-box-1.14.1-linux-amd64';
+    final bin = Platform.isWindows ? 'sing-box.exe' : 'sing-box';
+    return '$labBin/$dir/$bin';
   }
 
   /// Extra environment for the daemon (merged over the test process
@@ -126,7 +139,7 @@ class Lab {
     await Future.delayed(const Duration(seconds: 1));
 
     daemon = await Process.start(
-        '$labBin/connectived', [],
+        daemonBin, [],
         environment: {'HOME': dir.path, ...?extraEnv});
     // Daemon stderr -> file for post-mortem (flutter swallows child
     // stdio). Kept on failure via CONNECTIVE_KEEP_LAB=1.

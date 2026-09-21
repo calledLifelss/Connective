@@ -189,9 +189,7 @@ void main() {
     expect(store.backendAlive, isFalse);
     expect(store.lastError, isNotNull);
     // Restart the daemon on the same HOME (persisted state reloads).
-    final bin =
-        '${Platform.environment['HOME']}/.local/share/connective/lab-bin/connectived';
-    final d = await Process.start(bin, [],
+    final d = await Process.start(lab.daemonBin, [],
         environment: {'HOME': lab.dir.path});
     try {
       for (var i = 0; i < 30; i++) {
