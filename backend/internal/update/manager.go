@@ -323,25 +323,11 @@ func (m *Manager) Download(ctx context.Context) Status {
 	}
 	m.setState(StateDownloading, "")
 	art := *m.artifact
-	stageDir := filepath.Join(m.updatesDir(), "staging-dl")
-	dl := m.Downloader
-	if dl == nil {
-		dl = &Downloader{}
-	}
-	dl.OnProgress = func(done, total int64) bool {
-		m.mu.Lock()
-		m.status.Progress = progressOf(done, total, 0)
-		emit := m.snapshot()
-		m.mu.Unlock()
-		if m.OnEvent != nil {
-			m.OnEvent(emit)
-		}
-		return true
-	}
+	dl := m.downloader()
 	cctx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 	m.mu.Unlock()
-	path, _, ferr := m.fetch(cctx, dl, art, stageDir)
+	path, _, ferr := m.fetch(cctx, dl, art, filepath.Join(m.updatesDir(), "staging-dl"))
 	m.mu.Lock()
 	m.cancel = nil
 	if ferr != nil {
@@ -357,16 +343,12 @@ func (m *Manager) Download(ctx context.Context) Status {
 	}
 	m.setState(StateVerifying, "")
 	m.mu.Unlock()
-	if verr := VerifySHA256(path, art.SHA256); verr != nil {
-		os.Remove(path)
-		m.mu.Lock()
+	verr := m.verifyStaged(path, art)
+	m.mu.Lock()
+	if verr != nil {
 		m.setState(StateFailed, "This update could not be verified and was not installed.")
-		if m.log() != nil {
-			m.log().Error("update: hash mismatch, staged artifact discarded")
-		}
 		return m.snapshot()
 	}
-	m.mu.Lock()
 	m.staged = path
 	m.status.Progress = progressOf(art.Size, art.Size, 0)
 	m.setState(StateUpdateAvailable, "")
@@ -375,6 +357,51 @@ func (m *Manager) Download(ctx context.Context) Status {
 			art.Filename, art.Size)
 	}
 	return m.snapshot()
+}
+
+// downloader returns the configured downloader with live progress wired
+// to status events.
+func (m *Manager) downloader() *Downloader {
+	dl := m.Downloader
+	if dl == nil {
+		dl = &Downloader{}
+	}
+	dl.OnProgress = func(done, total int64) bool {
+		m.mu.Lock()
+		m.status.Progress = progressOf(done, total, 0)
+		emit := m.snapshot()
+		m.mu.Unlock()
+		if m.OnEvent != nil {
+			m.OnEvent(emit)
+		}
+		return true
+	}
+	return dl
+}
+
+// verifyStaged hash-checks a staged artifact, discarding bad bytes.
+func (m *Manager) verifyStaged(path string, art Artifact) error {
+	if verr := VerifySHA256(path, art.SHA256); verr != nil {
+		os.Remove(path)
+		if m.log() != nil {
+			m.log().Error("update: hash mismatch, staged artifact discarded")
+		}
+		return verr
+	}
+	return nil
+}
+
+// fetchVerified downloads art and hash-verifies it, discarding bad bytes.
+// Callers must NOT hold m.mu (progress callbacks take it).
+func (m *Manager) fetchVerified(ctx context.Context, dl *Downloader, art Artifact) (string, error) {
+	path, _, err := m.fetch(ctx, dl, art, filepath.Join(m.updatesDir(), "staging-dl"))
+	if err != nil {
+		return "", err
+	}
+	if err := m.verifyStaged(path, art); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // fetch downloads via HTTP(S) or provider stream for local URLs.
@@ -461,6 +488,25 @@ func (m *Manager) Install(ctx context.Context) Status {
 	}
 	m.mu.Unlock()
 	dir, aerr := installer.Assemble(ctx, ver, m.staged, kind, applier)
+	if aerr != nil && kind == ArtifactDelta {
+		// Delta inapplicable (no current tree, corrupt patch, …):
+		// fall back to the full artifact instead of failing.
+		if m.log() != nil {
+			m.log().Warn("update: delta unusable (%v), falling back to full", aerr)
+		}
+		if full := fullArtifactOf(m.pending); full != nil {
+			if fpath, ferr := m.fetchVerified(ctx, m.downloader(), *full); ferr == nil {
+				m.mu.Lock()
+				m.staged = fpath
+				m.artifact = full
+				m.mu.Unlock()
+				kind = ArtifactFull
+				dir, aerr = installer.Assemble(ctx, ver, fpath, kind, applier)
+			} else {
+				aerr = ferr
+			}
+		}
+	}
 	m.mu.Lock()
 	if aerr != nil {
 		m.setState(StateFailed, "The update could not be installed. Your current version is still safe.")

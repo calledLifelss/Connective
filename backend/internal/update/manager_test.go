@@ -246,6 +246,46 @@ func TestManagerDeltaFlow(t *testing.T) {
 	}
 }
 
+func TestManagerDeltaFallbackToFull(t *testing.T) {
+	pub, priv, id := testKeys(t)
+	current := "0.2.0"
+	m, dir := testManager(t, &current, pub, id)
+	// NOTE: no current tree in TestRoot, so the delta cannot apply;
+	// Install must fall back to full instead of failing.
+	fullSHA := putZip(t, dir, "full.zip", map[string]string{"connective": "v2-full"})
+	fullSt, _ := os.Stat(filepath.Join(dir, "full.zip"))
+	deltaSHA := putZip(t, dir, "delta.zip", map[string]string{"connective": "v2-delta"})
+	deltaSt, _ := os.Stat(filepath.Join(dir, "delta.zip"))
+	_ = deltaSt
+	mm := Manifest{
+		Schema: ManifestSchema, Version: "0.2.1", Channel: ChannelStable,
+		MinVersion: "0.2.0", Platform: PlatformLinux, Arch: ArchX8664,
+		Artifacts: []Artifact{
+			{Type: ArtifactFull, Filename: "full.zip", Size: fullSt.Size(), SHA256: fullSHA, URL: "full.zip"},
+			{Type: ArtifactDelta, Filename: "delta.zip", Size: 1, SHA256: deltaSHA, URL: "delta.zip", FromVersion: "0.2.0"},
+		},
+	}
+	publish(t, dir, mm, id, priv)
+
+	ctx := context.Background()
+	if got := m.Check(ctx, true); got.State != StateUpdateAvailable {
+		t.Fatalf("check: %s", got.State)
+	}
+	if got := m.Status(); got.Info.ArtifactType != ArtifactDelta {
+		t.Fatalf("delta should be selected, got %s", got.Info.ArtifactType)
+	}
+	if got := m.Download(ctx); got.State != StateUpdateAvailable {
+		t.Fatalf("download: %s", got.State)
+	}
+	if got := m.Install(ctx); got.State != StateUpdated {
+		t.Fatalf("install should fall back to full, got %s (%s)", got.State, got.Error)
+	}
+	gotBin, _ := os.ReadFile(filepath.Join(m.TestRoot, "current", "connective"))
+	if string(gotBin) != "v2-full" {
+		t.Fatalf("fallback tree wrong: %q", gotBin)
+	}
+}
+
 func TestManagerCancelDownload(t *testing.T) {
 	pub, priv, id := testKeys(t)
 	current := "0.2.0"
