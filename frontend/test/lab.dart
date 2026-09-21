@@ -138,15 +138,22 @@ class Lab {
     await ss(ss2Port);
     await Future.delayed(const Duration(seconds: 1));
 
-    daemon = await Process.start(
-        daemonBin, [],
-        environment: {'HOME': dir.path, ...?extraEnv});
+    // Windows daemons ignore $HOME (LOCALAPPDATA rules), so point the
+    // data dir explicitly for isolation on every OS.
+    dataDir = Platform.isWindows
+        ? '${dir.path}/data'
+        : '${dir.path}/.local/share/connective';
+    daemon = await Process.start(daemonBin, [], environment: {
+      'HOME': dir.path,
+      'CONNECTIVE_DATA_DIR': dataDir,
+      ...?extraEnv
+    });
     // Daemon stderr -> file for post-mortem (flutter swallows child
     // stdio). Kept on failure via CONNECTIVE_KEEP_LAB=1.
     _daemonLog =
         File('${dir.path}/daemon-stderr.log').openWrite();
     daemon!.stderr.listen(_daemonLog!.add);
-    sock = '${dir.path}/.local/share/connective/connectived.sock';
+    sock = '$dataDir/connectived.sock';
     for (var i = 0; i < 50 && !await File(sock).exists(); i++) {
       await Future.delayed(const Duration(milliseconds: 200));
     }
@@ -155,6 +162,9 @@ class Lab {
     // Listener to keep the HttpServer alive.
     _subServer = srv;
   }
+
+  /// Data dir the daemon was pointed at (for tests that restart it).
+  late String dataDir;
 
   HttpServer? _subServer;
   IOSink? _daemonLog;

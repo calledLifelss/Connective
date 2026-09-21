@@ -79,6 +79,7 @@ void main() {
       await req.response.close();
     });
     // Real backend with isolated HOME (no pollution of the real store).
+    // Windows daemons ignore $HOME, so the data dir is pinned explicitly.
     homeDir = await Directory.systemTemp.createTemp('drivehome');
     final labHome = Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
@@ -86,10 +87,14 @@ void main() {
     final daemonBin = Platform.isWindows
         ? '$labHome/.local/share/connective/lab-bin/connectived.exe'
         : '$labHome/.local/share/connective/lab-bin/connectived';
-    backend = await Process.start(daemonBin, [],
-        environment: {'HOME': homeDir.path});
-    final sock =
-        '${homeDir.path}/.local/share/connective/connectived.sock';
+    final dataDir = Platform.isWindows
+        ? '${homeDir.path}/data'
+        : '${homeDir.path}/.local/share/connective';
+    backend = await Process.start(daemonBin, [], environment: {
+      'HOME': homeDir.path,
+      'CONNECTIVE_DATA_DIR': dataDir,
+    });
+    final sock = '$dataDir/connectived.sock';
     for (var i = 0; i < 50; i++) {
       await Future.delayed(const Duration(milliseconds: 200));
       if (await File(sock).exists()) break;

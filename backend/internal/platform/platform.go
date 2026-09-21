@@ -22,7 +22,14 @@ func IsLinux() bool { return runtime.GOOS == "linux" }
 // DataDir returns the per-user state directory, creating it:
 // ~/.local/share/connective on Linux, %LOCALAPPDATA%/Connective on
 // Windows (roaming profiles must not carry sockets/caches).
+// CONNECTIVE_DATA_DIR overrides both (tests and portable installs).
 func DataDir() (string, error) {
+	if override := os.Getenv("CONNECTIVE_DATA_DIR"); override != "" {
+		if err := os.MkdirAll(override, 0o700); err != nil {
+			return "", err
+		}
+		return override, nil
+	}
 	var dir string
 	if runtime.GOOS == "windows" {
 		base := os.Getenv("LOCALAPPDATA")

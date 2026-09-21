@@ -189,8 +189,10 @@ void main() {
     expect(store.backendAlive, isFalse);
     expect(store.lastError, isNotNull);
     // Restart the daemon on the same HOME (persisted state reloads).
-    final d = await Process.start(lab.daemonBin, [],
-        environment: {'HOME': lab.dir.path});
+    final d = await Process.start(lab.daemonBin, [], environment: {
+      'HOME': lab.dir.path,
+      'CONNECTIVE_DATA_DIR': lab.dataDir,
+    });
     try {
       for (var i = 0; i < 30; i++) {
         await Future.delayed(const Duration(milliseconds: 300));
