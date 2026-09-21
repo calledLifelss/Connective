@@ -35,6 +35,20 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: lab binaries (harness needs a real backend + core)
+        env:
+          SINGBOX_VERSION: 1.14.1
+        run: |
+          mkdir -p ~/.local/share/connective/lab-bin
+          (cd backend && go build -o ~/.local/share/connective/lab-bin/connectived ./cmd/connectived)
+          curl -sL -o /tmp/sb.tar.gz \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          mkdir -p ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64
+          tar -xzf /tmp/sb.tar.gz -C ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64 \
+            --strip-components=1
       - name: analyze
         working-directory: frontend
         run: |
