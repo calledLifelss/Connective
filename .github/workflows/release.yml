@@ -181,9 +181,18 @@ jobs:
           lines += ['- %s (%s, %d bytes)' % (a['filename'], a['type'], a['size']) for a in man['artifacts']]
           lines += ['', 'Install: download the .rpm below, or update from inside the app (Settings → UPDATES).']
           print('\n'.join(lines))")"
+          # Idempotent: re-runs upload over the existing release instead
+          # of failing on duplicate creation.
+          if ! gh release view "${GITHUB_REF_NAME}" --json tagName > /dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" \
+              --notes "$NOTES" $PRE
+          fi
           # shellcheck disable=SC2086
-          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" \
-            --notes "$NOTES" $PRE \
-            ~/rpmbuild/RPMS/x86_64/*.rpm \
-            /tmp/upd/full-*.zip /tmp/upd/delta-*.zip \
+          FILES=( ~/rpmbuild/RPMS/x86_64/*.rpm
             /tmp/upd/update-manifest.json /tmp/upd/update-manifest.json.sig
+            /tmp/upd/full-*.zip )
+          for d in /tmp/upd/delta-*.zip; do
+            [ -e "$d" ] && FILES+=( "$d" )
+          done
+          gh release upload "${GITHUB_REF_NAME}" "${FILES[@]}" --clobber
