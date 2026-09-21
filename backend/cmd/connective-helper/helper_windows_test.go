@@ -77,7 +77,7 @@ func TestKillswitchOnOffWindows(t *testing.T) {
 	add("name=\"Connective Allow 172.16.0.0/12\" dir=out action=allow enable=yes remoteip=172.16.0.0/12")
 	add("name=\"Connective Allow 192.168.0.0/16\" dir=out action=allow enable=yes remoteip=192.168.0.0/16")
 	add("name=\"Connective Allow fe80::/10\" dir=out action=allow enable=yes remoteip=fe80::/10")
-	add("name=\"Connective Allow DHCP\" dir=out action=allow enable=yes protocol=UDP remoteport=67 remoteip=255.255.255.255")
+	add("name=\"Connective Allow DHCP\" dir=out action=allow enable=yes remoteip=255.255.255.255 protocol=UDP remoteport=67")
 	fake.On("netsh advfirewall firewall delete rule name=\"Connective Allow 127.0.0.0/8\"", "Ok.\n", nil)
 	fake.On("netsh advfirewall set allprofiles firewallpolicy blockinbound,blockoutbound", "Ok.\n", nil)
 

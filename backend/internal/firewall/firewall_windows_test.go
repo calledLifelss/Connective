@@ -43,9 +43,11 @@ func TestNetshManagerEnableDisable(t *testing.T) {
 	if err := mgr.Enable(); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	// Policy now reads back as blocking.
+	// Policy now reads back as blocking, with an owned rule present.
 	fake.On("netsh advfirewall show allprofiles",
 		"Firewall Policy   BlockInbound,BlockOutbound\n", nil)
+	fake.On("netsh advfirewall firewall show rule name=all",
+		"Rule Name:  Connective Allow 127.0.0.0/8\n", nil)
 	ok, err := mgr.Enabled()
 	if err != nil || !ok {
 		t.Fatalf("enabled=%v err=%v", ok, err)

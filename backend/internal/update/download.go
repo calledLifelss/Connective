@@ -118,7 +118,13 @@ func (d *Downloader) attempt(ctx context.Context, u *url.URL, tmp *os.File, have
 		if u.Host != "" && u.Host != "localhost" {
 			return 0, 0, "", fmt.Errorf("update: refusing remote file host")
 		}
-		f, err := os.Open(u.Path)
+		// URL paths always start with '/'; Windows needs the drive
+		// form (C:/…), not the URL form (/C:/…).
+		fpath := u.Path
+		if len(fpath) > 2 && fpath[0] == '/' && fpath[2] == ':' {
+			fpath = fpath[1:]
+		}
+		f, err := os.Open(fpath)
 		if err != nil {
 			return 0, 0, "", fmt.Errorf("update: missing asset: %w", err)
 		}
