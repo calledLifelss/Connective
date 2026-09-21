@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -266,14 +267,14 @@ func TestSingBoxPathMissing(t *testing.T) {
 // anything absent (fresh-install layout: /opt/connective/sing-box).
 func TestSiblingBinary(t *testing.T) {
 	dir := t.TempDir()
-	fake := dir + "/sing-box"
+	fake := filepath.Join(dir, "sing-box")
 	if err := os.WriteFile(fake, []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := siblingBinary(dir+"/connectived", "sing-box"); got != fake {
+	if got := siblingBinary(filepath.Join(dir, "connectived"), "sing-box"); got != fake {
 		t.Fatalf("got %q, want %q", got, fake)
 	}
-	if got := siblingBinary(dir+"/connectived", "nope"); got != "" {
+	if got := siblingBinary(filepath.Join(dir, "connectived"), "nope"); got != "" {
 		t.Fatalf("absent binary must yield empty, got %q", got)
 	}
 }

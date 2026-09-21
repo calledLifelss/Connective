@@ -122,7 +122,10 @@ func (in *Installer) Assemble(ctx context.Context, target string, stagedArtifact
 
 // Activate atomically points `current` at versions/<target>, anchoring
 // the old tree in `previous` for rollback. Returns the previous version
-// ("" when none).
+// ("" when none). On unix the final switch is an atomic rename; on
+// Windows rename cannot replace an existing link, so the stale link is
+// removed first — a documented microsecond window during which the app
+// is always closed (the updater owns activation, never a live app).
 func (in *Installer) Activate(target string) (string, error) {
 	dir, err := in.VersionDir(target)
 	if err != nil {
@@ -145,7 +148,7 @@ func (in *Installer) Activate(target string) (string, error) {
 	if err := os.Symlink(next, tmp); err != nil {
 		return "", err
 	}
-	if err := os.Rename(tmp, in.currentLink()); err != nil {
+	if err := replaceLink(tmp, in.currentLink()); err != nil {
 		os.Remove(tmp)
 		return "", fmt.Errorf("update: activate: %w", err)
 	}
@@ -163,7 +166,7 @@ func (in *Installer) Rollback() (string, error) {
 	if err := os.Symlink(prev, tmp); err != nil {
 		return "", err
 	}
-	if err := os.Rename(tmp, in.currentLink()); err != nil {
+	if err := replaceLink(tmp, in.currentLink()); err != nil {
 		os.Remove(tmp)
 		return "", fmt.Errorf("update: rollback: %w", err)
 	}

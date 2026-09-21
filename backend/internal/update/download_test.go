@@ -152,7 +152,10 @@ func TestDownloadFileURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	dl := &Downloader{}
-	path, sum, err := dl.Fetch(context.Background(), "file://"+src, t.TempDir(), 0)
+	// file:// URLs need the empty-host form on every OS
+	// (file:///C:/... on Windows, file:///tmp/... on unix).
+	fileURL := "file:///" + strings.TrimPrefix(filepath.ToSlash(src), "/")
+	path, sum, err := dl.Fetch(context.Background(), fileURL, t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

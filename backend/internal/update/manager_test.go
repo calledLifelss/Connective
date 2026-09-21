@@ -97,8 +97,8 @@ func fullManifest(t *testing.T, dir, version, sha string, size int64) Manifest {
 		Channel:      ChannelStable,
 		ReleaseNotes: []string{"Test release"},
 		MinVersion:   "0.2.0",
-		Platform:     PlatformLinux,
-		Arch:         ArchX8664,
+		Platform:     testPlatform(),
+		Arch:         testArch(),
 		Artifacts: []Artifact{
 			{Type: ArtifactFull, Filename: "full.zip", Size: size, SHA256: sha, URL: "full.zip"},
 		},
@@ -211,7 +211,7 @@ func TestManagerDeltaFlow(t *testing.T) {
 	deltaSt, _ := os.Stat(filepath.Join(dir, "delta.zip"))
 	mm := Manifest{
 		Schema: ManifestSchema, Version: "0.2.1", Channel: ChannelStable,
-		MinVersion: "0.2.0", Platform: PlatformLinux, Arch: ArchX8664,
+		MinVersion: "0.2.0", Platform: testPlatform(), Arch: testArch(),
 		Artifacts: []Artifact{
 			{Type: ArtifactFull, Filename: "full.zip", Size: fullSt.Size(), SHA256: fullSHA, URL: "full.zip"},
 			{Type: ArtifactDelta, Filename: "delta.zip", Size: deltaSt.Size(), SHA256: deltaSHA, URL: "delta.zip", FromVersion: "0.2.0"},
@@ -259,7 +259,7 @@ func TestManagerDeltaFallbackToFull(t *testing.T) {
 	_ = deltaSt
 	mm := Manifest{
 		Schema: ManifestSchema, Version: "0.2.1", Channel: ChannelStable,
-		MinVersion: "0.2.0", Platform: PlatformLinux, Arch: ArchX8664,
+		MinVersion: "0.2.0", Platform: testPlatform(), Arch: testArch(),
 		Artifacts: []Artifact{
 			{Type: ArtifactFull, Filename: "full.zip", Size: fullSt.Size(), SHA256: fullSHA, URL: "full.zip"},
 			{Type: ArtifactDelta, Filename: "delta.zip", Size: 1, SHA256: deltaSHA, URL: "delta.zip", FromVersion: "0.2.0"},

@@ -74,7 +74,7 @@ func TestElevateCommandQuoting(t *testing.T) {
 	if !strings.Contains(joined, "-Verb RunAs -Wait") {
 		t.Fatalf("missing UAC verb: %q", joined)
 	}
-	if strings.Contains(joined, "connective-helper.exe', 'killswitch-on") == false {
+	if !strings.Contains(joined, "'C:\\Program Files\\Connective\\connective-helper.exe' 'killswitch-on'") {
 		t.Fatalf("args not passed through: %q", joined)
 	}
 	bin2, args2 := ElevateCommand(`C:\x\h.exe`, []string{"a'b"})

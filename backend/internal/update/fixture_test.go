@@ -9,8 +9,25 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+// testPlatform/testArch mirror the daemon's runtime mapping so
+// fixtures match on every OS the suite runs on.
+func testPlatform() string {
+	if runtime.GOOS == "windows" {
+		return PlatformWindows
+	}
+	return PlatformLinux
+}
+
+func testArch() string {
+	if runtime.GOARCH == "arm64" {
+		return ArchAARCH64
+	}
+	return ArchX8664
+}
 
 // sha256Of hashes bytes (test helper for expected hashes).
 func sha256Of(b []byte) string {

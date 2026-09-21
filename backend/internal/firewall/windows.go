@@ -107,7 +107,9 @@ func (m NetshManager) Enabled() (bool, error) {
 	return strings.Contains(rules, OwnedPrefix), nil
 }
 
-// ReadPolicy returns the current allprofiles firewall policy.
+// ReadPolicy returns the current allprofiles firewall policy. Real
+// netsh output is whitespace-columnar ("Firewall Policy" +
+// spaces + value), but colon-separated variants are tolerated.
 func ReadPolicy(r platform.Runner) (string, error) {
 	ctx := context.Background()
 	out, err := r.Run(ctx, "netsh", "advfirewall", "show", "allprofiles")
@@ -115,12 +117,19 @@ func ReadPolicy(r platform.Runner) (string, error) {
 		return "", err
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "Firewall Policy") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				if p := strings.ReplaceAll(strings.TrimSpace(parts[1]), " ", ""); p != "" {
-					return p, nil
-				}
+		if !strings.Contains(line, "Firewall Policy") {
+			continue
+		}
+		rest := line
+		if i := strings.Index(rest, ":"); i >= 0 {
+			rest = rest[i+1:]
+		} else {
+			rest = strings.TrimPrefix(rest, "Firewall Policy")
+		}
+		if p := strings.ReplaceAll(strings.TrimSpace(rest), " ", ""); p != "" {
+			// Sanity: a policy is comma-joined inbound/outbound halves.
+			if strings.Contains(p, ",") {
+				return p, nil
 			}
 		}
 	}
