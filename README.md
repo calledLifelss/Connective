@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="packaging/icons/connective-256.png" alt="Connective logo" width="128" />
-  <h1>Connective</h1>
+  <img src="packaging/icons/ConnectiveBanner.png" alt="Connective banner" />
   <p><strong>A modern desktop VPN/proxy client — Flutter UI, Go backend, sing-box core.</strong></p>
   <p>Linux first (Fedora / KDE Plasma / Wayland). No root runtime. Self-updating.</p>
 </div>
