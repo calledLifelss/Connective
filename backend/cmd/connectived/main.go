@@ -212,11 +212,11 @@ func (d *Daemon) singBoxPath() (string, error) {
 	// install can never connect until the user hand-configures a path,
 	// because sing-box is not on PATH.
 	if exe, err := os.Executable(); err == nil {
-		if candidate := siblingBinary(exe, "sing-box"); candidate != "" {
+		if candidate := siblingBinary(exe, platform.CoreExeName()); candidate != "" {
 			return candidate, nil
 		}
 	}
-	if p, err := exec.LookPath("sing-box"); err == nil {
+	if p, err := exec.LookPath(platform.CoreExeName()); err == nil {
 		return p, nil
 	}
 	return "", fmt.Errorf("sing-box not found: set corePath in settings or install sing-box")
@@ -231,7 +231,7 @@ func (d *Daemon) helperPath() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		candidate := filepath.Join(filepath.Dir(exe), "connective-helper")
+		candidate := filepath.Join(filepath.Dir(exe), platform.HelperExeName())
 		if _, err := os.Stat(candidate); err == nil {
 			abs, err := filepath.Abs(candidate)
 			if err != nil {
@@ -239,7 +239,7 @@ func (d *Daemon) helperPath() (string, error) {
 			}
 			return abs, nil
 		}
-		if p, err := exec.LookPath("connective-helper"); err == nil {
+		if p, err := exec.LookPath(platform.HelperExeName()); err == nil {
 			return p, nil
 		}
 		return "", fmt.Errorf("connective-helper not found next to daemon or on PATH")
@@ -265,39 +265,9 @@ func siblingBinary(exePath, name string) string {
 	return ""
 }
 
-// helperRunner returns the elevation prefix. Default is pkexec
-// (interactive polkit prompt). Tests set CONNECTIVE_HELPER_RUNNER, e.g.
-// "sudo -n", after caching credentials.
-func helperRunner() []string {
-	if v := os.Getenv("CONNECTIVE_HELPER_RUNNER"); v != "" {
-		return splitFields(v)
-	}
-	return []string{"pkexec"}
-}
-
-func splitFields(s string) []string {
-	var out []string
-	for _, f := range splitSpaces(s) {
-		if f != "" {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-func splitSpaces(s string) []string {
-	var out []string
-	cur := ""
-	for _, r := range s {
-		if r == ' ' || r == '\t' {
-			out = append(out, cur)
-			cur = ""
-			continue
-		}
-		cur += string(r)
-	}
-	return append(out, cur)
-}
+// Elevation lives in internal/platform now (pkexec on Linux, UAC
+// PowerShell wrapper on Windows); tests override via
+// CONNECTIVE_HELPER_RUNNER. See ElevatedCommand.
 
 // --- connect / disconnect ---
 
@@ -382,7 +352,7 @@ func (d *Daemon) connectLocked(serverID, reason string) error {
 		_ = d.machine.Transition(connection.StError, err.Error())
 		return err
 	}
-	if h, err := dns.ResolvConfHash(); err == nil {
+	if h, err := dns.ResolverSnapshot(); err == nil {
 		d.resolvHash = h
 	}
 
@@ -477,6 +447,10 @@ func (d *Daemon) startCore(cfgPath, clashSecret string) (*core.Manager, int, err
 		if _, err := d.helperPath(); err != nil {
 			return nil, 0, err
 		}
+		// Windows TUN rides on wintun.dll beside sing-box.exe.
+		if err := platform.RequireWintun(sb); err != nil && st.TunEnabled {
+			return nil, 0, err
+		}
 		// Elevated launch: the core binary must be trusted too.
 		if err := platform.TrustedBinary(sb); err != nil {
 			return nil, 0, fmt.Errorf("untrusted core binary: %w", err)
@@ -504,7 +478,7 @@ func (d *Daemon) startCore(cfgPath, clashSecret string) (*core.Manager, int, err
 func (d *Daemon) verifyTUN() error {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if _, err := os.Stat("/sys/class/net/connective0"); err == nil {
+		if present, _ := platform.TunExists(platform.OwnTunName); present {
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -535,18 +509,18 @@ func (d *Daemon) verifyRouting(tun bool) error {
 // alive despite SIGKILL). Only the privileged helper can end it.
 var errUnreachable = errors.New("process alive but not signalable")
 
-// processGone probes pid with signal 0: nil when reaped, errUnreachable
-// when alive (signalable or not — anything surviving Stop needs the
-// helper), other errors pass through (treated as gone by the caller).
+// processGone probes pid: nil when reaped, errUnreachable when alive
+// (signalable or not — anything surviving Stop needs the helper),
+// other errors pass through (treated as gone by the caller).
+// The probe itself is platform-specific (see internal/platform/proc_*).
 func processGone(pid int) error {
-	err := syscall.Kill(pid, 0)
-	if err == nil || err == syscall.EPERM {
-		return errUnreachable
+	if err := platform.ProcessGone(pid); err != nil {
+		if platform.ErrUnreachable(err) {
+			return errUnreachable
+		}
+		return err
 	}
-	if err == syscall.ESRCH {
-		return nil
-	}
-	return err
+	return nil
 }
 
 func (d *Daemon) stopCore() {
@@ -604,7 +578,7 @@ func (d *Daemon) disconnect(reason string) error {
 		tun := d.settings.TunEnabled
 		d.mu.Unlock()
 		if kill {
-			_ = d.runHelper("killswitch-off")
+			_ = d.runHelper("killswitch-off", "--state", filepath.Join(d.dataDir, "killswitch.state"))
 		}
 		if tun {
 			_ = d.runHelper("tun-cleanup", "--if", "connective0")
@@ -620,12 +594,12 @@ func (d *Daemon) disconnect(reason string) error {
 	tun := d.settings.TunEnabled
 	d.mu.Unlock()
 	if kill {
-		_ = d.runHelper("killswitch-off")
+		_ = d.runHelper("killswitch-off", "--state", filepath.Join(d.dataDir, "killswitch.state"))
 	}
 	if tun {
 		_ = d.runHelper("tun-cleanup", "--if", "connective0")
 	}
-	if h, err := dns.ResolvConfHash(); err == nil && d.resolvHash != "" && h != d.resolvHash {
+	if h, err := dns.ResolverSnapshot(); err == nil && d.resolvHash != "" && h != d.resolvHash {
 		d.log.Warn("system resolver changed during session (before=%s after=%s)", d.resolvHash, h)
 	}
 	_ = d.machine.Transition(connection.StDisconnected, reason)
@@ -689,21 +663,24 @@ func (d *Daemon) elevatedCoreCommand(cfgPath string) (bin string, args []string,
 	sb, _ := d.singBoxPath()
 	helper, _ := d.helperPath()
 	coreArgs := []string{"run-core", "--", sb, "run", "-c", cfgPath}
-	if os.Geteuid() == 0 {
-		return helper, coreArgs, "via helper (already root)"
+	if platform.IsElevated() {
+		return helper, coreArgs, "via helper (already privileged)"
 	}
-	runner := helperRunner()
-	out := append([]string{}, runner[1:]...)
-	out = append(out, helper)
-	out = append(out, coreArgs...)
-	return runner[0], out, fmt.Sprintf("elevated (%s)", runner[0])
+	bin, full := platform.ElevatedCommand(helper, coreArgs)
+	return bin, full, fmt.Sprintf("elevated (%s)", bin)
 }
 
 // applyKillSwitch enforces egress lockdown: only the tunnel device,
 // loopback/LAN/established flows and the VPN server endpoints may pass.
 func (d *Daemon) applyKillSwitch(targets []*servers.Server) error {
 	seen := map[string]bool{}
-	args := []string{"--tun", "connective0"}
+	// --state snapshots/restores the previous firewall policy. The
+	// Linux helper accepts and ignores it (nft needs no snapshot);
+	// Windows requires it.
+	args := []string{
+		"--tun", "connective0",
+		"--state", filepath.Join(d.dataDir, "killswitch.state"),
+	}
 	for _, s := range targets {
 		ips, err := net.LookupIP(s.Address)
 		if err != nil || len(ips) == 0 {
@@ -739,15 +716,8 @@ func (d *Daemon) runHelper(args ...string) error {
 	// startup timeout); these are all short syscalls.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if os.Geteuid() == 0 {
-		cmd := exec.CommandContext(ctx, helper, args...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("helper %v: %s: %w", args, string(out), err)
-		}
-		return nil
-	}
-	runner := helperRunner()
-	cmd := exec.CommandContext(ctx, runner[0], append(append([]string{}, runner[1:]...), append([]string{helper}, args...)...)...)
+	bin, full := platform.ElevatedCommand(helper, args)
+	cmd := exec.CommandContext(ctx, bin, full...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("helper %v: %s: %w", args, string(out), err)
 	}

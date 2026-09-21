@@ -1,0 +1,169 @@
+name: windows
+
+# Windows build/test/package on every push + PR; release assets upload
+# on intentional release tags (v*). The Linux release job creates the
+# GitHub Release; this job uploads the Windows sidecar assets.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write # upload release assets on tags
+
+env:
+  SINGBOX_VERSION: 1.14.1
+  WINTUN_VERSION: 0.14.1
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: backend tests
+        working-directory: backend
+        run: go test ./...
+
+      - name: frontend checks
+        working-directory: frontend
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+
+      - name: version
+        id: ver
+        shell: pwsh
+        run: |
+          $ver = $env:GITHUB_REF_NAME -replace '^v',''
+          if ([string]::IsNullOrEmpty($ver)) { $ver = "0.0.0-dev" }
+          "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: version guard
+        shell: pwsh
+        run: |
+          if ($env:VER -eq "0.0.0-dev") { exit 0 }
+          Select-String -Path frontend\pubspec.yaml -Pattern "^version: $env:VER" -Quiet | ForEach-Object { if (-not $_) { throw "pubspec version mismatch" } }
+          Select-String -Path backend\internal\update\version.go -Pattern "CurrentVersion = `"$env:VER`"" -Quiet | ForEach-Object { if (-not $_) { throw "backend version mismatch" } }
+
+      - name: build backend
+        working-directory: backend
+        run: |
+          go build -o C:\dist\connectived.exe ./cmd/connectived
+          go build -o C:\dist\connective-helper.exe ./cmd/connective-helper
+          go build -o C:\dist\connective-updater.exe ./cmd/connective-updater
+
+      - name: fetch sing-box + wintun
+        shell: pwsh
+        run: |
+          $sb = "sing-box-$env:SINGBOX_VERSION-windows-amd64"
+          Invoke-WebRequest -Uri "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/$sb.zip" -OutFile C:\sb.zip
+          Expand-Archive C:\sb.zip -DestinationPath C:\sb
+          Copy-Item "C:\sb\$sb\sing-box.exe" C:\dist\sing-box.exe
+          Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-$env:WINTUN_VERSION.zip" -OutFile C:\wintun.zip
+          Expand-Archive C:\wintun.zip -DestinationPath C:\wintun
+          Copy-Item "C:\wintun\wintun\bin\amd64\wintun.dll" C:\dist\wintun.dll
+          Copy-Item "C:\wintun\wintun\LICENSE.txt" C:\dist\wintun-LICENSE.txt
+
+      - name: build flutter
+        working-directory: frontend
+        run: flutter build windows --release --build-name "${{ env.VER }}" --build-number 1
+
+      - name: stage versioned tree
+        shell: pwsh
+        run: |
+          $stage = "C:\stage"
+          $tree = "$stage\versions\${{ env.VER }}"
+          New-Item -ItemType Directory -Force -Path $tree | Out-Null
+          Copy-Item frontend\build\windows\x64\runner\Release\* $tree -Recurse -Force
+          Copy-Item C:\dist\connectived.exe, C:\dist\connective-helper.exe, C:\dist\sing-box.exe, C:\dist\wintun.dll $tree -Force
+          New-Item -ItemType Directory -Force -Path "$stage\updater" | Out-Null
+          Copy-Item C:\dist\connective-updater.exe "$stage\updater\" -Force
+          "${{ env.VER }}" | Out-File -FilePath "$stage\current.txt" -NoNewline -Encoding ascii
+          Get-ChildItem $tree | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+
+      - name: installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc /DAppVersion="${{ env.VER }}" /DSourceDir="C:\stage" packaging\windows\connective.iss
+          Get-ChildItem packaging\windows\installer-out\ | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+
+      - name: smoke install + launch
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem packaging\windows\installer-out\*-setup.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/DIR=C:\ConnectiveCI" -Wait
+          $app = "C:\ConnectiveCI\versions\${{ env.VER }}\connective.exe"
+          if (-not (Test-Path $app)) { throw "installed app missing: $app" }
+          $p = Start-Process -FilePath $app -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) { throw "app exited during smoke launch" }
+          Get-Process -Name "connective*" | Select-Object Name, Id | Format-Table | Out-String | Write-Host
+          Stop-Process -Name "connective*" -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          $un = "C:\ConnectiveCI\unins000.exe"
+          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES" -Wait }
+          if (Test-Path "C:\ConnectiveCI\versions") { throw "uninstall left the tree behind" }
+
+      - name: update artifacts (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          # Flat zip: files at root (see Installer.Assemble convention).
+          Compress-Archive -Path "C:\stage\versions\${{ env.VER }}\*" -DestinationPath "C:\upd\full-${{ env.VER }}-windows-x64.zip" -Force
+          # Delta needs a published same-platform base; the first
+          # Windows prerelease ships full-only (documented).
+
+      - name: manifest + sign + verify (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          UPDATE_KEY_ID: ${{ secrets.UPDATE_KEY_ID }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrEmpty($env:UPDATE_SIGNING_KEY)) { throw "missing UPDATE_SIGNING_KEY secret" }
+          $env:UPDATE_SIGNING_KEY | Out-File -FilePath C:\op.key -NoNewline -Encoding ascii
+          $ch = "stable"; if ("${{ env.VER }}" -match "-") { $ch = "beta" }
+          cd backend
+          go run ./cmd/update-tool manifest --version "${{ env.VER }}" --channel $ch `
+            --platform windows --arch x86_64 --min-version 0.2.0 `
+            --asset-base "https://github.com/calledLifelss/Connective/releases/download/${{ github.ref_name }}" `
+            --out C:\upd\update-manifest-windows.json "full:C:\upd\full-${{ env.VER }}-windows-x64.zip"
+          go run ./cmd/update-tool sign --manifest C:\upd\update-manifest-windows.json `
+            --private C:\op.key --key-id "$env:UPDATE_KEY_ID" --out C:\upd\update-manifest-windows.json
+          go run ./cmd/update-tool verify --manifest C:\upd\update-manifest-windows.json `
+            --keys ..\packaging\update-pubkeys.json
+          Remove-Item C:\op.key -Force
+
+      - name: upload to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          # The Linux job creates the release; wait for it (bounded).
+          for ($i = 0; $i -lt 60; $i++) {
+            try { gh release view "${{ github.ref_name }}" --json tagName | Out-Null; break }
+            catch { Start-Sleep -Seconds 30 }
+          }
+          $files = @(
+            (Get-ChildItem packaging\windows\installer-out\*-setup.exe).FullName,
+            "C:\upd\full-${{ env.VER }}-windows-x64.zip",
+            "C:\upd\update-manifest-windows.json",
+            "C:\upd\update-manifest-windows.json.sig"
+          )
+          $delta = Get-ChildItem C:\upd\*-windows-x64-delta*.zip -ErrorAction SilentlyContinue
+          if ($delta) { $files += $delta.FullName }
+          gh release upload "${{ github.ref_name }}" $files --clobber

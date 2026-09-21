@@ -330,6 +330,64 @@ func TestGitHubOpenArtifact(t *testing.T) {
 	}
 }
 
+func TestManifestCandidates(t *testing.T) {
+	win := manifestCandidates(PlatformWindows)
+	if win[0] != "update-manifest-windows.json" {
+		t.Fatalf("windows must prefer its manifest: %v", win)
+	}
+	lin := manifestCandidates(PlatformLinux)
+	if lin[0] != "update-manifest-linux.json" || lin[1] != GitHubManifestAsset {
+		t.Fatalf("linux lookup wrong: %v", lin)
+	}
+}
+
+func TestGitHubWindowsManifestPreferred(t *testing.T) {
+	_, priv, id := testKeys(t)
+	fx := &ghFixture{t: t, bodies: map[string][]byte{}}
+	winMan := linuxManifest("0.3.0", fulArt("full.zip", "full.zip"))
+	winMan.Platform = PlatformWindows
+	winMan.Channel = ChannelBeta
+	rel := fx.signedRelease("v0.3.0", true, winMan, priv, id, "full.zip")
+	// Rename the manifest asset to the Windows-specific name.
+	for i, a := range rel.Assets {
+		if a.Name == GitHubManifestAsset {
+			rel.Assets[i].Name = "update-manifest-windows.json"
+		}
+		if a.Name == GitHubSigAsset {
+			rel.Assets[i].Name = "update-manifest-windows.json.sig"
+		}
+	}
+	// Shuffle the registered bodies to the Windows names.
+	fx.bodies["/dl/v0.3.0/update-manifest-windows.json"] = fx.bodies["/dl/v0.3.0/update-manifest.json"]
+	fx.bodies["/dl/v0.3.0/update-manifest-windows.json.sig"] = fx.bodies["/dl/v0.3.0/update-manifest.json.sig"]
+	// A stale shared manifest must NOT win on Windows.
+	linMan := linuxManifest("0.2.5", fulArt("full.zip", "full.zip"))
+	linMan.Channel = ChannelBeta
+	smLin, err := SignManifest(linMan, id, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawLin, _ := json.Marshal(smLin)
+	fx.bodies["/dl/v0.3.0/update-manifest.json"] = rawLin
+	fx.bodies["/dl/v0.3.0/update-manifest.json.sig"] = []byte(smLin.Signature + "\n")
+	rel.Assets = append(rel.Assets,
+		ghAsset{Name: GitHubManifestAsset},
+		ghAsset{Name: GitHubSigAsset})
+	fx.releases = []ghRelease{rel}
+	srv := fx.serve()
+	defer srv.Close()
+	fx.rewrite(srv)
+
+	q := Query{Channel: ChannelBeta, Platform: PlatformWindows, Arch: ArchX8664, CurrentVersion: "0.2.0"}
+	got, err := ghProvider(srv).Check(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Manifest.Manifest.Version != "0.3.0" || got.Manifest.Manifest.Platform != PlatformWindows {
+		t.Fatalf("wrong manifest: %+v", got.Manifest.Manifest)
+	}
+}
+
 func TestTagVersion(t *testing.T) {
 	for tag, want := range map[string]string{"v0.2.1": "0.2.1", "V1.0.0": "1.0.0", "0.2.0": "0.2.0"} {
 		got, err := tagVersion(tag)

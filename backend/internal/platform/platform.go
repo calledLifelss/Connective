@@ -19,18 +19,36 @@ func OS() string { return runtime.GOOS }
 // IsLinux reports whether this is the primary target platform.
 func IsLinux() bool { return runtime.GOOS == "linux" }
 
-// DataDir returns the per-user state directory, creating it.
+// DataDir returns the per-user state directory, creating it:
+// ~/.local/share/connective on Linux, %LOCALAPPDATA%/Connective on
+// Windows (roaming profiles must not carry sockets/caches).
 func DataDir() (string, error) {
-	base, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	var dir string
+	if runtime.GOOS == "windows" {
+		base := os.Getenv("LOCALAPPDATA")
+		if base == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			base = home
+		}
+		dir = filepath.Join(base, "Connective")
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".local", "share", "connective")
 	}
-	dir := filepath.Join(base, ".local", "share", "connective")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil
 }
+
+// IsWindows reports whether this is the Windows target.
+func IsWindows() bool { return runtime.GOOS == "windows" }
 
 // SocketPath returns the daemon IPC socket path.
 func SocketPath() (string, error) {

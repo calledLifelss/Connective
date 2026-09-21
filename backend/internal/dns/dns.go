@@ -74,3 +74,9 @@ func ResolvConfHash() (string, error) {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
 }
+
+// HashBytes snapshots arbitrary resolver state (Windows).
+func HashBytes(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}

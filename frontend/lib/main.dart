@@ -58,7 +58,9 @@ Future<void> _initDesktop(AppStore store) async {
     await windowManager.ensureInitialized();
     await windowManager.setTitle('Connective');
     await windowManager.setMinimumSize(const Size(900, 620));
-    await trayManager.setIcon('assets/tray.png');
+    // tray_manager needs .ico on Windows, .png elsewhere.
+    await trayManager.setIcon(
+        Platform.isWindows ? 'assets/tray.ico' : 'assets/tray.png');
     await trayManager.setToolTip('Connective');
     await trayManager.setContextMenu(Menu(items: [
       MenuItem(key: 'show', label: 'Show'),

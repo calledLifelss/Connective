@@ -147,6 +147,27 @@ func (p GitHubProvider) Check(ctx context.Context, q Query) (*Release, error) {
 	return nil, ErrNoUpdate(reason)
 }
 
+// manifestCandidates prefers a platform-specific manifest
+// (update-manifest-windows.json) and falls back to the shared
+// update-manifest.json. Linux behavior is unchanged: it keeps reading
+// the shared file (also published as update-manifest-linux.json by
+// tooling that wants symmetry, which the lookup tolerates).
+func manifestCandidates(platform string) []string {
+	names := []string{"update-manifest-" + platform + ".json", GitHubManifestAsset}
+	if platform == PlatformLinux {
+		names = append(names, "update-manifest-linux.json")
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range names {
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // releaseFrom validates one release's manifest and resolves artifacts.
 func (p GitHubProvider) releaseFrom(ctx context.Context, r ghRelease, q Query) (*Release, error) {
 	manURL := ""
@@ -154,11 +175,16 @@ func (p GitHubProvider) releaseFrom(ctx context.Context, r ghRelease, q Query) (
 	byName := map[string]ghAsset{}
 	for _, a := range r.Assets {
 		byName[a.Name] = a
-		if a.Name == GitHubManifestAsset {
+	}
+	for _, want := range manifestCandidates(q.Platform) {
+		if a, ok := byName[want]; ok && a.BrowserDownloadURL != "" {
 			manURL = a.BrowserDownloadURL
-		}
-		if a.Name == GitHubSigAsset {
-			sigURL = a.BrowserDownloadURL
+			if s, ok := byName[want+".sig"]; ok {
+				sigURL = s.BrowserDownloadURL
+			} else if s, ok := byName[GitHubSigAsset]; ok {
+				sigURL = s.BrowserDownloadURL
+			}
+			break
 		}
 	}
 	if manURL == "" {

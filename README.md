@@ -74,11 +74,11 @@ Key docs: `docs/ARCHITECTURE.md`, `docs/IPC_CONTRACT.md`,
 | Platform | Status |
 |---|---|
 | Linux x86_64 (Fedora / KDE Plasma / Wayland) | ✅ Released (RPM) |
-| Windows | ❌ Not released (provider/model hooks exist) |
+| Windows x64 (10 1809+ / 11) | 🧪 Prerelease (`Connective-*-windows-x64-setup.exe`) |
 
 ## Installation
 
-Download the Fedora RPM from
+**Linux** — download the Fedora RPM from
 [GitHub Releases](https://github.com/calledLifelss/Connective/releases)
 and install:
 
@@ -90,12 +90,21 @@ Launch **Connective** from the application menu. The UI never runs as
 root — privileged TUN/firewall operations go through a small
 polkit-authorized helper (one auth prompt per connect).
 
+**Windows** — download `Connective-<version>-windows-x64-setup.exe`
+from [GitHub Releases](https://github.com/calledLifelss/Connective/releases)
+and run it (UAC elevation is requested by the installer). The app
+itself never runs elevated: TUN/routes/firewall go through a
+per-action UAC helper. Start Menu entry included, optional desktop
+shortcut. Uninstall keeps `%LOCALAPPDATA%\Connective` (subscriptions,
+servers, settings) unless you tick removal. Details, build
+instructions, and troubleshooting: [`docs/WINDOWS.md`](docs/WINDOWS.md).
+
 ## Building
 
 Requires Flutter (stable) and Go ≥ 1.26.
 
 ```bash
-# Backend
+# Backend (add GOOS=windows for the cross-compile proof)
 cd backend
 go build ./...
 go test ./...
@@ -108,6 +117,11 @@ flutter test
 flutter run -d linux        # attaches to the running backend
 flutter build linux --release
 ```
+
+Windows builds run on GitHub Actions (`windows.yml`): Go + Flutter
+builds, unit/widget tests, Inno Setup installer, smoke
+install/launch/uninstall, and update-asset publishing. See
+[`docs/WINDOWS.md`](docs/WINDOWS.md).
 
 RPM layout: `flutter build linux --release` bundle + `connectived`,
 `connective-helper`, `sing-box` → `packaging/connective.spec`.

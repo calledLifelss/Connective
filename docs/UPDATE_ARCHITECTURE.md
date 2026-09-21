@@ -54,6 +54,13 @@ overwrite newer state (regression-tested).
 <root>/staging/…                   scratch, wiped per run
 ```
 
+Windows uses the same model under `%ProgramFiles%\Connective`, with
+`current.txt` (version pointer, atomically replaced) alongside the
+trees until the launcher stub lands; full artifacts tolerate a single
+top-level folder either way. Per-platform manifests
+(`update-manifest-windows.json`, fallback `update-manifest.json`) let
+one release serve both OSes. See `docs/WINDOWS.md`.
+
 ## RPM coexistence (no breakage today)
 
 The current Fedora package keeps its flat `/opt/connective/` layout.

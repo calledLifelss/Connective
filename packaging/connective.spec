@@ -1,6 +1,6 @@
 Name:           connective
-Version:        0.2.1
-Release:        0.test.1%{?dist}
+Version:        0.3.0
+Release:        0.beta.1%{?dist}
 Summary:        Modern desktop VPN client (Flutter + Go + sing-box)
 License:        Apache-2.0 AND GPL-3.0-only
 URL:            https://github.com/connective/connective
@@ -89,6 +89,8 @@ touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %changelog
+* Mon Sep 22 2026 Connective Team - 0.3.0-0.beta.1
+- Windows x64 prerelease train: Windows target, installer, updater.
 * Mon Sep 21 2026 Connective Team - 0.2.1-0.test.1
 - Updater test train: live GitHub provider, embedded release trust.
 * Mon Sep 21 2026 Connective Team - 0.2.0-2

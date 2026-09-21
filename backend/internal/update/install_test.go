@@ -50,6 +50,31 @@ func TestFullAssembleActivate(t *testing.T) {
 	}
 }
 
+func TestFullNestedTopFolderStripped(t *testing.T) {
+	root := t.TempDir()
+	in := &Installer{Root: root}
+	ctx := context.Background()
+
+	// Full artifacts built as `zip -r full.zip <version>/` carry one
+	// top folder; assembly must land files at the tree root.
+	// writeZip names its output payload.zip — reuse it directly.
+	stage := t.TempDir()
+	nested, _ := writeZip(t, stage, map[string]string{
+		"0.9.9/connective": "bin",
+		"0.9.9/data/x":     "1",
+	})
+	dir, err := in.Assemble(ctx, "0.9.9", nested, ArtifactFull, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "connective")); string(got) != "bin" {
+		t.Fatalf("top folder not stripped: %q", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "data", "x")); string(got) != "1" {
+		t.Fatalf("nested file wrong: %q", got)
+	}
+}
+
 func TestDeltaAssembleOverCurrent(t *testing.T) {
 	root := t.TempDir()
 	in := &Installer{Root: root}

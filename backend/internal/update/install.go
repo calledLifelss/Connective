@@ -208,10 +208,54 @@ func unzipAll(src, dst string) error {
 		return err
 	}
 	defer z.Close()
+	strip := zipTopPrefix(z)
 	for _, f := range z.File {
-		if err := unzipOne(f, dst); err != nil {
+		if err := unzipOneStrip(f, dst, strip); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// zipTopPrefix detects the single-top-folder convention (all members
+// under one root dir, nothing at root): full artifacts built as
+// `zip -r full.zip <version>/` carry it, flat zips do not. Deltas are
+// overlays and NEVER strip (see ZipOverlayApplier).
+func zipTopPrefix(z *zip.ReadCloser) string {
+	var top string
+	for _, f := range z.File {
+		name := strings.TrimSuffix(f.Name, "/")
+		if name == "" {
+			continue
+		}
+		seg := name
+		if i := strings.Index(seg, "/"); i >= 0 {
+			seg = seg[:i]
+		} else {
+			return "" // a file at root: flat layout
+		}
+		if top == "" {
+			top = seg
+		} else if top != seg {
+			return "" // multiple roots: not the single-folder case
+		}
+	}
+	return top
+}
+
+// unzipOneStrip extracts one member, stripping a single top folder.
+func unzipOneStrip(f *zip.File, outDir, strip string) error {
+	name := f.Name
+	if strip != "" {
+		if name != strip && !strings.HasPrefix(name, strip+"/") {
+			return fmt.Errorf("update: member %q outside top folder", name)
+		}
+		name = strings.TrimPrefix(name, strip+"/")
+		if name == "" || name == "/" {
+			return nil // the folder entry itself
+		}
+	}
+	f2 := *f
+	f2.Name = name
+	return unzipOne(&f2, outDir)
 }
