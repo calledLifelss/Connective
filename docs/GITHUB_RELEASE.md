@@ -32,22 +32,17 @@ RPM spec, manifest, and tag (CI `version guard` enforces this).
   secrets below exist. Delta step degrades to full-only when no stable
   release exists yet.
 
-Required secrets (name + purpose; values never recorded):
+Required secrets (provisioned; values never recorded):
 
 - `UPDATE_SIGNING_KEY` — hex seed of the Ed25519 release private key,
   written 0600 into the runner and shredded after signing.
 - `UPDATE_KEY_ID` — signing key id (`connective-release-1`).
 
-Provision (maintainer, from the machine holding the key):
+To rotate, generate a new pair with `update-tool gen-key`, embed the
+new public key (`trusted_keys.go` + `packaging/update-pubkeys.json`),
+and overwrite the secrets.
 
-```bash
-gh secret set UPDATE_SIGNING_KEY --repo calledLifelss/Connective \
-  --body "$(cat /path/to/signing.key)"
-gh secret set UPDATE_KEY_ID --repo calledLifelss/Connective \
-  --body "connective-release-1"
-```
-
-## Updater verification (no GitHub publish rights in this session)
+## Updater verification
 
 Live anonymous discovery against `api.github.com` succeeds and an
 empty repo reports quiet no-update (no auth needed by design).
@@ -76,23 +71,38 @@ step-ordering bugs, RPM hyphen-version tarball naming, and a missing
 updater copy step. `ci` is green; `release` progressed stage by stage
 to manifest/sign/publish.
 
+## Final state (2026-09-21)
+
+- `v0.2.0` stable published with RPM, full artifact, signed manifest
+  (+ detached `.sig`) and SHA256SUMS; round-trip downloaded and
+  re-verified.
+- `v0.2.1-test.1` prerelease (beta) **built, signed, and published by
+  the CI pipeline itself** after `UPDATE_SIGNING_KEY` / `UPDATE_KEY_ID`
+  secrets were provisioned: RPM, full (49.6 MB), delta (13.8 MB),
+  manifest, sig. Signature re-verified against the embedded trust root.
+- Live updater proof with the real releases: beta discovery of
+  `0.2.1-test.1`, delta selected (13 799 565 B shown), download →
+  SHA-256 verified → assembled over a real 0.2.0 tree → activated →
+  health-checked → updated; `previous` anchor retained.
+- First-generation path proven too: with no versioned base, the delta
+  is skipped and the full artifact is fetched automatically.
+- Failure paths (bad signature, tampered manifest, hash mismatch,
+  corrupt artifact, invalid delta, missing asset) reject with the
+  installation untouched — via daemon IPC tests and the Go suite.
+- Rollback proven on real trees (dead target → previous version
+  active, data preserved).
+- Full regression green after all changes: `go test ./...`, `flutter
+  analyze`, `flutter test` (37), `integration_test -d linux`,
+  `e2e-30s`, `e2e-failover`.
+- Production private key shredded after provisioning; CI holds the
+  only usable copy as `UPDATE_SIGNING_KEY`.
+
 ## Remaining limitations
 
-1. **Publishing needs rights the first session credential lacked.**
-   A full-scope token resolved this; secrets are provisioned and the
-   stable release is published. Remaining maintainer follow-ups:
-   - repository description/topics (web UI or a token with
-     Administration scope);
-   - `UPDATE_SIGNING_KEY` / `UPDATE_KEY_ID` secrets (commands above);
-   - creating the releases (web UI, or with a token that has
-     Contents scope):
-     ```bash
-     gh release create v0.2.0 --title v0.2.0 \
-       --notes-file docs/RELEASE_NOTES_v0.2.0.md \
-       connective-0.2.0-2.fc44.x86_64.rpm full-0.2.0.zip \
-       update-manifest.json update-manifest.json.sig SHA256SUMS
-     ```
-   - re-running the tag workflows once secrets exist.
+1. **Social preview image**: GitHub offers no API for the repository
+   social image — upload `packaging/icons/ConnectiveBanner.png` at
+   Settings → Social preview in the web UI. (The same banner already
+   heads the README.)
 2. **No live self-replacement of `/opt` yet.** The updater engine,
    versioned layout, and rollback are implemented and proven on real
    trees, but activating into the root-owned RPM layout needs the
