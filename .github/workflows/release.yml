@@ -100,7 +100,9 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           STABLE="$(gh release list --limit 50 --json tagName,isPrerelease \
             --jq '[.[] | select(.isPrerelease == false)][0].tagName')"
-          test -n "$STABLE" || { echo "no stable base for delta"; exit 1; }
+          # No stable release yet (first prerelease ever): ship full-only
+          # rather than failing the whole pipeline.
+          test -n "$STABLE" || { echo "no stable base yet — full-only prerelease"; exit 0; }
           echo "STABLE_TAG=$STABLE" >> "$GITHUB_ENV"
           echo "STABLE_VER=${STABLE#v}" >> "$GITHUB_ENV"
           gh release download "$STABLE" --pattern "full-*.zip" --dir /tmp/upd
