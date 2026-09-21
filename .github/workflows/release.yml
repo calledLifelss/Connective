@@ -84,14 +84,17 @@ jobs:
       - name: assemble bundle + rpm
         run: |
           VER="${GITHUB_REF_NAME#v}"
+          # RPM versions cannot contain '-': 0.2.1-test.1 → tarball/topdir
+          # use 0.2.1 (spec Release carries the test suffix).
+          RPMVER="${VER%%-*}"
           cp /tmp/dist/connectived /tmp/dist/connective-helper /tmp/dist/sing-box \
             frontend/build/linux/x64/release/bundle/
           mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-          rm -rf /tmp/rpmsrc && mkdir -p "/tmp/rpmsrc/connective-$VER"
-          cp -a frontend/build/linux/x64/release/bundle "/tmp/rpmsrc/connective-$VER/bundle"
-          cp -a packaging "/tmp/rpmsrc/connective-$VER/packaging"
-          tar -czf "$HOME/rpmbuild/SOURCES/connective-$VER.tar.gz" \
-            -C /tmp/rpmsrc "connective-$VER"
+          rm -rf /tmp/rpmsrc && mkdir -p "/tmp/rpmsrc/connective-$RPMVER"
+          cp -a frontend/build/linux/x64/release/bundle "/tmp/rpmsrc/connective-$RPMVER/bundle"
+          cp -a packaging "/tmp/rpmsrc/connective-$RPMVER/packaging"
+          tar -czf "$HOME/rpmbuild/SOURCES/connective-$RPMVER.tar.gz" \
+            -C /tmp/rpmsrc "connective-$RPMVER"
           cp packaging/connective.spec ~/rpmbuild/SPECS/
           rpmbuild -bb ~/rpmbuild/SPECS/connective.spec
           ls ~/rpmbuild/RPMS/x86_64/
