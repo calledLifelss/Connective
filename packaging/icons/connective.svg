@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Connective placeholder icon: minimalist connection nodes tracing a C.
+       Replace with the final approved logo asset (same filename). -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#0F0E17"/>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="none" stroke="#2E2C45" stroke-width="3"/>
+  <g stroke="#8B5CF6" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M92 44 A34 34 0 1 0 92 84"/>
+  </g>
+  <g fill="#34D399">
+    <circle cx="92" cy="44" r="9"/>
+    <circle cx="92" cy="84" r="9"/>
+  </g>
+  <circle cx="52" cy="64" r="11" fill="#8B5CF6"/>
+</svg>

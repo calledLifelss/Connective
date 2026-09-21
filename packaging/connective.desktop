@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Connective
+Comment=Modern desktop VPN client (Flutter + Go + sing-box)
+Exec=/opt/connective/connective
+Icon=connective
+Terminal=false
+Type=Application
+Categories=Network;Security;
+StartupWMClass=connective
+Keywords=vpn;proxy;sing-box;

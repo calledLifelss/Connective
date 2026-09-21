@@ -1,0 +1,39 @@
+# Connective: never commit build outputs, artifacts, or secrets.
+
+# Build trees
+frontend/build/
+dist/
+*.tar.gz
+
+# Compiled Go binaries (built from backend/cmd/*)
+backend/connectived
+backend/connective-helper
+backend/connective-updater
+backend/update-tool
+
+# Release packages ship via GitHub Releases, not git
+*.rpm
+*.deb
+
+# Test/run artifacts
+frontend/test/failures/
+*.log
+
+# Local update staging / lab state
+updates/
+staging/
+.conntest*/
+
+# OS / editors
+.DS_Store
+*.swp
+*~
+
+# Secrets: PATs, private keys, tokens, credentials — NEVER commit.
+*.pem
+*.key
+*.p12
+*.pfx
+*secret*
+*.token
+.env

@@ -1,0 +1,28 @@
+name: connective
+description: Connective desktop VPN client — Flutter UI over the Go backend daemon.
+publish_to: "none"
+version: 0.2.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  window_manager: ^0.5.2
+  tray_manager: ^0.7.0
+  launch_at_startup: ^0.5.1
+  flutter_local_notifications: ^22.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/tray.png
+    - assets/flags/
