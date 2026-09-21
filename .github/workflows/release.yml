@@ -44,14 +44,6 @@ jobs:
         working-directory: backend
         run: go test ./...
 
-      - name: lab binaries (harness needs a real backend + core)
-        run: |
-          mkdir -p ~/.local/share/connective/lab-bin
-          cp /tmp/dist/connectived ~/.local/share/connective/lab-bin/connectived
-          mkdir -p ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64
-          tar -xzf /tmp/sb.tar.gz -C ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64 \
-            --strip-components=1
-
       - name: frontend checks
         working-directory: frontend
         run: |
@@ -77,6 +69,14 @@ jobs:
       - name: build flutter
         working-directory: frontend
         run: flutter build linux --release
+
+      - name: lab binaries (harness needs a real backend + core)
+        run: |
+          mkdir -p ~/.local/share/connective/lab-bin
+          cp /tmp/dist/connectived ~/.local/share/connective/lab-bin/connectived
+          mkdir -p ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64
+          tar -xzf /tmp/sb.tar.gz -C ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64 \
+            --strip-components=1
 
       - name: assemble bundle + rpm
         run: |
