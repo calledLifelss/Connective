@@ -121,8 +121,10 @@ jobs:
           test -n "$STABLE" || { echo "no stable base yet — full-only prerelease"; exit 0; }
           echo "STABLE_TAG=$STABLE" >> "$GITHUB_ENV"
           echo "STABLE_VER=${STABLE#v}" >> "$GITHUB_ENV"
-          gh release download "$STABLE" --pattern "full-*.zip" --dir /tmp/upd
-          mkdir -p /tmp/upd/base && (cd /tmp/upd/base && unzip -qo /tmp/upd/full-*.zip)
+          mkdir -p /tmp/upd/base-dl /tmp/upd/base
+          gh release download "$STABLE" --pattern "full-*.zip" --dir /tmp/upd/base-dl
+          STABLE_ZIP="$(echo /tmp/upd/base-dl/full-*.zip | head -n1)"
+          (cd /tmp/upd/base && unzip -qo "$STABLE_ZIP")
           BASEDIR="$(echo /tmp/upd/base/*/ | head -n1)"
           (cd backend && go run ./cmd/update-tool delta \
             --from "$BASEDIR" --to "/tmp/upd/versions/$VER" \
