@@ -67,10 +67,20 @@ production trust roots, temp install root:
 UI flow (banner → dialog → download → install → updated) is covered
 against signed local fixtures in `frontend/test/update_test.dart`.
 
+## CI validation history
+
+The pipeline earned its keep during this task, catching in live runs:
+gofmt drift, info-level analyze failures, untracked update fixtures
+(`.gitignore` swallowing `testdata/`), missing lab binaries, workflow
+step-ordering bugs, RPM hyphen-version tarball naming, and a missing
+updater copy step. `ci` is green; `release` progressed stage by stage
+to manifest/sign/publish.
+
 ## Remaining limitations
 
-1. **Publishing needs rights this session's credential lacks.**
-   Required follow-ups by the maintainer:
+1. **Publishing needs rights the first session credential lacked.**
+   A full-scope token resolved this; secrets are provisioned and the
+   stable release is published. Remaining maintainer follow-ups:
    - repository description/topics (web UI or a token with
      Administration scope);
    - `UPDATE_SIGNING_KEY` / `UPDATE_KEY_ID` secrets (commands above);
