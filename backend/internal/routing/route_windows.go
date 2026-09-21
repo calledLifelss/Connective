@@ -9,6 +9,9 @@ import (
 	"connective/backend/internal/platform"
 )
 
+// runner executes OS tools; tests override it with fixtures.
+var runner platform.Runner = platform.DefaultRunner
+
 // DefaultRoute returns the system default route's interface IP and
 // gateway by parsing `route print -4` (unprivileged, always truthful).
 func DefaultRoute() (iface, gateway string, err error) {
@@ -55,6 +58,12 @@ func VerifyTUNDefault(tun string, expectTUN bool) error {
 		var err error
 		addr, err = TunAddress(tun)
 		if err != nil {
+			// No such interface: in proxy mode (expectTUN=false)
+			// egress trivially cannot go through it — pass. In
+			// TUN mode the missing device is a hard failure.
+			if !expectTUN {
+				return nil
+			}
 			return err
 		}
 	}
@@ -75,7 +84,7 @@ func VerifyTUNDefault(tun string, expectTUN bool) error {
 // TunAddress resolves a TUN interface name to its IPv4 address via
 // `netsh interface ip show addresses`.
 func TunAddress(name string) (string, error) {
-	out, err := platform.DefaultRunner.Run(context.Background(),
+	out, err := runner.Run(context.Background(),
 		"netsh", "interface", "ip", "show", "addresses", "name="+name)
 	if err != nil {
 		return "", fmt.Errorf("routing: tun address: %w", err)
@@ -95,7 +104,7 @@ func TunAddress(name string) (string, error) {
 
 // ipv4Table fetches `route print -4` and parses it (see routetable.go).
 func ipv4Table() ([]routeEntry, error) {
-	out, err := platform.DefaultRunner.Run(context.Background(),
+	out, err := runner.Run(context.Background(),
 		"route", "print", "-4")
 	if err != nil {
 		return nil, fmt.Errorf("routing: route print: %w", err)

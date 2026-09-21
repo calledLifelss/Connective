@@ -60,10 +60,22 @@ jobs:
 
       - name: frontend checks
         working-directory: frontend
+        env:
+          CONNECTIVE_KEEP_LAB: '1'
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
           flutter test
+
+      - name: upload lab logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-lab-logs
+          path: |
+            ${{ runner.temp }}\conntest*\daemon-stderr.log
+            ${{ runner.temp }}\conntest*\sub.txt
+          if-no-files-found: warn
 
       - name: version
         id: ver
