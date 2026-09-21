@@ -44,16 +44,10 @@ jobs:
         working-directory: backend
         run: go test ./...
 
-      - name: frontend checks
-        working-directory: frontend
-        run: |
-          flutter pub get
-          flutter analyze --no-fatal-infos
-          flutter test
-
       - name: build backend
         working-directory: backend
         run: |
+          mkdir -p /tmp/dist
           go build -o /tmp/dist/connectived ./cmd/connectived
           go build -o /tmp/dist/connective-helper ./cmd/connective-helper
           go build -o /tmp/dist/connective-updater ./cmd/connective-updater
@@ -73,6 +67,15 @@ jobs:
           mkdir -p ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64
           tar -xzf /tmp/sb.tar.gz -C ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64 \
             --strip-components=1
+          test -x ~/.local/share/connective/lab-bin/connectived
+          test -x ~/.local/share/connective/lab-bin/sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box
+
+      - name: frontend checks
+        working-directory: frontend
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
 
       - name: build flutter
         working-directory: frontend
