@@ -19,8 +19,9 @@ backend/update-tool
 frontend/test/failures/
 *.log
 
-# Local update staging / lab state
+# Local update staging / lab state (but keep committed test fixtures)
 updates/
+!frontend/test/testdata/updates/
 staging/
 .conntest*/
 

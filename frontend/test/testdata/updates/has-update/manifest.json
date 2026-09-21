@@ -1,0 +1,26 @@
+{
+  "manifest": {
+    "manifest_version": 1,
+    "version": "0.3.0",
+    "channel": "stable",
+    "release_date": "2026-09-21",
+    "release_notes": [
+      "Fixture feature one",
+      "Fixture fix two"
+    ],
+    "minimum_version": "0.2.0",
+    "platform": "linux",
+    "architecture": "x86_64",
+    "artifacts": [
+      {
+        "type": "full",
+        "filename": "full.zip",
+        "size": 230,
+        "sha256": "3047786686496ee3f3ff5d096ed6fbad23dce136eb318d40d7350867d7514bf6",
+        "url": "full.zip"
+      }
+    ]
+  },
+  "signature": "893c52c22521f352d39c6c8d000615d23a123c1b1c1dc6f5e777226d310510ed5942dba91362859849fc0efbbaa2188b91ca8a0f0c036949fa218fe7e3c03307",
+  "key_id": "test-key-1"
+}

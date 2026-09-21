@@ -1,0 +1,25 @@
+{
+  "manifest": {
+    "manifest_version": 1,
+    "version": "0.3.0",
+    "channel": "stable",
+    "release_date": "2026-09-21",
+    "release_notes": [
+      "Evil"
+    ],
+    "minimum_version": "0.2.0",
+    "platform": "linux",
+    "architecture": "x86_64",
+    "artifacts": [
+      {
+        "type": "full",
+        "filename": "full.zip",
+        "size": 132,
+        "sha256": "975197133e5d1805f7d553483ec31cabf26ecd335a402f1689eac2752b268e05",
+        "url": "full.zip"
+      }
+    ]
+  },
+  "signature": "21551e696668cbbf5179a673987417ec5dc3044f04439b5b14c10e674de1d39ee67790519b344c0a944c5c03ce8f88dc9830187d0f0542ffc94079bf1af11000",
+  "key_id": "test-key-1"
+}
