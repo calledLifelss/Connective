@@ -74,6 +74,11 @@ void main() {
           () => Future.delayed(const Duration(milliseconds: 500)));
       await settle(tester);
     }
+    if (!cond()) {
+      // ignore: avoid_print
+      print(
+          'UPDATE-WAIT-TIMEOUT state=${store.updateState} err=${store.updateError} staged=${store.updateStaged}');
+    }
   }
 
   testWidgets('no update: dashboard stays quiet', (tester) async {
