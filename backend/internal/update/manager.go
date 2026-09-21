@@ -70,16 +70,16 @@ type Manager struct {
 	Downloader *Downloader
 	Applier    DeltaApplier
 
-	mu       sync.Mutex
-	status   Status
-	cancel   context.CancelFunc
-	cache    CheckCache
-	store    *persistence.Store
-	pending  *Release   // checked, verified release
-	artifact *Artifact  // selected payload
-	staged   string     // verified artifact path
+	mu        sync.Mutex
+	status    Status
+	cancel    context.CancelFunc
+	cache     CheckCache
+	store     *persistence.Store
+	pending   *Release  // checked, verified release
+	artifact  *Artifact // selected payload
+	staged    string    // verified artifact path
 	assembled string    // assembled target tree
-	lastPoll time.Time
+	lastPoll  time.Time
 }
 
 func (m *Manager) now() time.Time {

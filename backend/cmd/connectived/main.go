@@ -1400,9 +1400,9 @@ func (d *Daemon) hGetState(p json.RawMessage) (any, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return map[string]any{
-		"state":   string(d.machine.State()),
-		"server":  d.machine.ServerID(),
-		"auto":    d.sel.Auto,
+		"state":  string(d.machine.State()),
+		"server": d.machine.ServerID(),
+		"auto":   d.sel.Auto,
 		// Manual selection, distinct from the connected server above.
 		// Lets the Dashboard show "connected X" vs "selected Y".
 		// Additive: older UIs ignore it.

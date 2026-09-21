@@ -36,7 +36,7 @@ var allowed = map[string]map[string]bool{
 		// Downloading a fresh artifact, or Staging (assemble) an
 		// already-verified download when the user presses Install.
 		StateDownloading: true, StateStaging: true,
-		StateChecking: true,
+		StateChecking:  true,
 		StateCancelled: true, StateIdle: true, // dismissed
 	},
 	StateDownloading: {
@@ -102,13 +102,13 @@ type Info struct {
 
 // Status is the full snapshot the UI renders and tests assert on.
 type Status struct {
-	State        string   `json:"state"`
-	Info         *Info    `json:"info,omitempty"`
-	Progress     Progress `json:"progress"`
-	Error        string   `json:"error,omitempty"`
-	Channel      string   `json:"channel"`
-	Current      string   `json:"currentVersion"`
-	LastCheckUnix int64   `json:"lastCheckUnix,omitempty"`
+	State         string   `json:"state"`
+	Info          *Info    `json:"info,omitempty"`
+	Progress      Progress `json:"progress"`
+	Error         string   `json:"error,omitempty"`
+	Channel       string   `json:"channel"`
+	Current       string   `json:"currentVersion"`
+	LastCheckUnix int64    `json:"lastCheckUnix,omitempty"`
 	// Staged is true once the download is verified and assembled-ready:
 	// the UI shows Install instead of Download.
 	Staged bool `json:"staged"`

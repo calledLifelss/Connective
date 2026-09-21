@@ -3,7 +3,10 @@ package update
 import "testing"
 
 func TestParseCompare(t *testing.T) {
-	cases := []struct{ a, b string; want int }{
+	cases := []struct {
+		a, b string
+		want int
+	}{
 		{"0.2.0", "0.2.0", 0},
 		{"0.2.0", "0.2.1", -1},
 		{"0.2.1", "0.2.0", 1},

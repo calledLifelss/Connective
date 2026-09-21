@@ -22,22 +22,22 @@ type Artifact struct {
 	Type        string `json:"type"` // full | delta
 	Filename    string `json:"filename"`
 	Size        int64  `json:"size"`
-	SHA256      string `json:"sha256"` // lowercase hex
-	URL         string `json:"url"`    // http(s) or file URL
+	SHA256      string `json:"sha256"`                 // lowercase hex
+	URL         string `json:"url"`                    // http(s) or file URL
 	FromVersion string `json:"from_version,omitempty"` // delta source
 }
 
 // Manifest is the unsigned update description. JSON field order is
 // fixed (struct order) so CanonicalBytes is deterministic for signing.
 type Manifest struct {
-	Schema       int      `json:"manifest_version"`
-	Version      string   `json:"version"`
-	Channel      string   `json:"channel"`
-	ReleaseDate  string   `json:"release_date,omitempty"`
-	ReleaseNotes []string `json:"release_notes,omitempty"`
-	MinVersion   string   `json:"minimum_version,omitempty"`
-	Platform     string   `json:"platform"`
-	Arch         string   `json:"architecture"`
+	Schema       int        `json:"manifest_version"`
+	Version      string     `json:"version"`
+	Channel      string     `json:"channel"`
+	ReleaseDate  string     `json:"release_date,omitempty"`
+	ReleaseNotes []string   `json:"release_notes,omitempty"`
+	MinVersion   string     `json:"minimum_version,omitempty"`
+	Platform     string     `json:"platform"`
+	Arch         string     `json:"architecture"`
 	Artifacts    []Artifact `json:"artifacts"`
 }
 

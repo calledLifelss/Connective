@@ -22,6 +22,7 @@ import (
 // Test installs apply in-process against a temp root:
 //
 //	CONNECTIVE_UPDATE_TEST_APPLY=1
+//
 // Production update source. Env overrides exist for tests/dev; an
 // empty environment means the real GitHub repository, anonymously.
 func updateProviderFromEnv() update.ReleaseProvider {

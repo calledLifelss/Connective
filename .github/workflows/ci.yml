@@ -39,7 +39,8 @@ jobs:
         working-directory: frontend
         run: |
           flutter pub get
-          flutter analyze
+          # Infos only (pre-existing tray deprecations): never fail CI.
+          flutter analyze --no-fatal-infos
       - name: test
         working-directory: frontend
         run: flutter test
