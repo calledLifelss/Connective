@@ -2,6 +2,20 @@ package update
 
 import "fmt"
 
+// fullArtifactOf returns the manifest's full artifact, if any.
+func fullArtifactOf(rel *Release) *Artifact {
+	if rel == nil {
+		return nil
+	}
+	for i := range rel.Manifest.Manifest.Artifacts {
+		if rel.Manifest.Manifest.Artifacts[i].Type == ArtifactFull {
+			a := rel.Manifest.Manifest.Artifacts[i]
+			return &a
+		}
+	}
+	return nil
+}
+
 // SelectArtifact picks the smallest safe supported update: a delta
 // sourced at exactly the current version when it is valid and
 // beneficial, otherwise the full artifact. Full is the safety net and
