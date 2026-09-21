@@ -22,6 +22,8 @@ import (
 // Test installs apply in-process against a temp root:
 //
 //	CONNECTIVE_UPDATE_TEST_APPLY=1
+// Production update source. Env overrides exist for tests/dev; an
+// empty environment means the real GitHub repository, anonymously.
 func updateProviderFromEnv() update.ReleaseProvider {
 	spec := strings.TrimSpace(os.Getenv("CONNECTIVE_UPDATE_PROVIDER"))
 	if rest, ok := strings.CutPrefix(spec, "dir:"); ok && rest != "" {
@@ -30,16 +32,17 @@ func updateProviderFromEnv() update.ReleaseProvider {
 	if rest, ok := strings.CutPrefix(spec, "file:"); ok && rest != "" {
 		return update.DirProvider{Dir: rest}
 	}
-	return update.GitHubProvider{}
+	return update.GitHubProvider{Owner: "calledLifelss", Repo: "Connective"}
 }
 
-// trustedKeysFromEnv loads {key_id: hexpub} trust roots. Production
-// will ship this file with the package; until then an absent file means
-// fail-closed verification. The path (never key material) may be logged.
+// trustedKeysFromEnv loads {key_id: hexpub} trust roots. A dev/test
+// file overrides the embedded production roots when set; otherwise the
+// embedded release key applies. Absent everywhere means fail-closed
+// verification. The path (never key material) may be logged.
 func trustedKeysFromEnv() update.TrustedKeys {
 	path := strings.TrimSpace(os.Getenv("CONNECTIVE_UPDATE_TRUSTED_KEYS"))
 	if path == "" {
-		return update.TrustedKeys{}
+		return update.DefaultTrustedKeys()
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {

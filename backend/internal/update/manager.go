@@ -556,6 +556,9 @@ func progressOf(done, total, speed int64) Progress {
 
 // friendlyCheck keeps offline/no-network failures calm for the UI.
 func friendlyCheck(err error) string {
+	if IsRateLimit(err) {
+		return "GitHub request limit reached. Trying again later."
+	}
 	msg := err.Error()
 	if strings.Contains(msg, "no such host") ||
 		strings.Contains(msg, "connection refused") ||

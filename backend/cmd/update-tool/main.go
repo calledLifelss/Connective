@@ -122,6 +122,7 @@ func genManifest(args []string) error {
 	notes := fs.String("notes", "", "release notes separated by ;")
 	minV := fs.String("min-version", "", "minimum supported version")
 	date := fs.String("date", "", "release date (YYYY-MM-DD)")
+	assetBase := fs.String("asset-base", "", "absolute URL prefix for artifacts (release download base)")
 	out := fs.String("out", "manifest.json", "output file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -153,6 +154,9 @@ func genManifest(args []string) error {
 			Size:     size,
 			SHA256:   sum,
 			URL:      filepath.Base(parts[1]),
+		}
+		if base := strings.TrimSuffix(*assetBase, "/"); base != "" {
+			a.URL = base + "/" + a.Filename
 		}
 		if len(parts) == 3 {
 			a.FromVersion = parts[2]
@@ -212,7 +216,12 @@ func signManifest(args []string) error {
 	if err := os.WriteFile(*out, append(outRaw, '\n'), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("signed %s with %s -> %s\n", m.Version, *keyID, *out)
+	// Detached signature sidecar for external verifiers and the
+	// update-manifest.json.sig release asset.
+	if err := os.WriteFile(*out+".sig", []byte(sm.Signature+"\n"), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("signed %s with %s -> %s (+ .sig)\n", m.Version, *keyID, *out)
 	return nil
 }
 

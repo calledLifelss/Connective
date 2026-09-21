@@ -1,0 +1,169 @@
+name: release
+
+# Intentional release tags only: v0.2.0 (stable), v0.2.1-test.1 (prerelease).
+# Normal pushes never publish: see ci.yml.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create releases + upload assets
+
+env:
+  SINGBOX_VERSION: 1.14.1
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm patchelf zip clang cmake ninja-build \
+            pkg-config libgtk-3-dev libayatana-appindicator3-dev > /dev/null
+
+      - name: version guard
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          grep -q "^version: $VER" frontend/pubspec.yaml || \
+            { echo "pubspec version mismatch for tag $VER"; exit 1; }
+          grep -q "CurrentVersion = \"$VER\"" backend/internal/update/version.go || \
+            { echo "backend version mismatch for tag $VER"; exit 1; }
+
+      - name: backend tests
+        working-directory: backend
+        run: go test ./...
+
+      - name: frontend checks
+        working-directory: frontend
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: build backend
+        working-directory: backend
+        run: |
+          go build -o /tmp/dist/connectived ./cmd/connectived
+          go build -o /tmp/dist/connective-helper ./cmd/connective-helper
+          go build -o /tmp/dist/connective-updater ./cmd/connective-updater
+
+      - name: fetch sing-box
+        run: |
+          curl -sL -o /tmp/sb.tar.gz \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/sb.tar.gz -C /tmp
+          cp "/tmp/sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box" /tmp/dist/sing-box
+          chmod 755 /tmp/dist/*
+
+      - name: build flutter
+        working-directory: frontend
+        run: flutter build linux --release
+
+      - name: assemble bundle + rpm
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          cp /tmp/dist/connectived /tmp/dist/connective-helper /tmp/dist/sing-box \
+            frontend/build/linux/x64/release/bundle/
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          rm -rf /tmp/rpmsrc && mkdir -p "/tmp/rpmsrc/connective-$VER"
+          cp -a frontend/build/linux/x64/release/bundle "/tmp/rpmsrc/connective-$VER/bundle"
+          cp -a packaging "/tmp/rpmsrc/connective-$VER/packaging"
+          tar -czf "$HOME/rpmbuild/SOURCES/connective-$VER.tar.gz" \
+            -C /tmp/rpmsrc "connective-$VER"
+          cp packaging/connective.spec ~/rpmbuild/SPECS/
+          rpmbuild -bb ~/rpmbuild/SPECS/connective.spec
+          ls ~/rpmbuild/RPMS/x86_64/
+
+      - name: full artifact
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p /tmp/upd/versions
+          cp -a frontend/build/linux/x64/release/bundle "/tmp/upd/versions/$VER"
+          (cd /tmp/upd/versions && zip -qr "/tmp/upd/full-$VER.zip" "$VER")
+
+      - name: delta artifact (prereleases against latest stable)
+        if: contains(github.ref_name, '-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          STABLE="$(gh release list --limit 50 --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease == false)][0].tagName')"
+          test -n "$STABLE" || { echo "no stable base for delta"; exit 1; }
+          echo "STABLE_TAG=$STABLE" >> "$GITHUB_ENV"
+          echo "STABLE_VER=${STABLE#v}" >> "$GITHUB_ENV"
+          gh release download "$STABLE" --pattern "full-*.zip" --dir /tmp/upd
+          mkdir -p /tmp/upd/base && (cd /tmp/upd/base && unzip -qo /tmp/upd/full-*.zip)
+          BASEDIR="$(echo /tmp/upd/base/*/ | head -n1)"
+          (cd backend && go run ./cmd/update-tool delta \
+            --from "$BASEDIR" --to "/tmp/upd/versions/$VER" \
+            --out "/tmp/upd/delta-$VER.zip")
+
+      - name: manifest + sign + verify
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          UPDATE_KEY_ID: ${{ secrets.UPDATE_KEY_ID }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          test -n "$UPDATE_SIGNING_KEY" || { echo "missing UPDATE_SIGNING_KEY secret"; exit 1; }
+          test -n "$UPDATE_KEY_ID" || { echo "missing UPDATE_KEY_ID secret"; exit 1; }
+          printf '%s' "$UPDATE_SIGNING_KEY" > /tmp/op.key && chmod 600 /tmp/op.key
+          CH="stable"; case "$VER" in *-*) CH="beta";; esac
+          ARTS=( "full:/tmp/upd/full-$VER.zip" )
+          if [ -f "/tmp/upd/delta-$VER.zip" ]; then
+            ARTS+=( "delta:/tmp/upd/delta-$VER.zip:${STABLE_VER:?delta base unknown}" )
+          fi
+          (cd backend && go run ./cmd/update-tool manifest --version "$VER" \
+            --channel "$CH" --platform linux --arch x86_64 --min-version 0.2.0 \
+            --asset-base "https://github.com/calledLifelss/Connective/releases/download/${GITHUB_REF_NAME}" \
+            --out /tmp/upd/update-manifest.json "${ARTS[@]}")
+          (cd backend && go run ./cmd/update-tool sign \
+            --manifest /tmp/upd/update-manifest.json \
+            --private /tmp/op.key --key-id "$UPDATE_KEY_ID" \
+            --out /tmp/upd/update-manifest.json)
+          (cd backend && go run ./cmd/update-tool verify \
+            --manifest /tmp/upd/update-manifest.json \
+            --keys ../packaging/update-pubkeys.json)
+          python3 - ../packaging/update-pubkeys.json << 'EOF'
+          import json, sys, hashlib
+          man = json.load(open('/tmp/upd/update-manifest.json'))
+          assert man['manifest']['version'] == __import__('os').environ.get('VER', man['manifest']['version'])
+          for a in man['manifest']['artifacts']:
+              p = '/tmp/upd/' + a['filename']
+              h = hashlib.sha256(open(p, 'rb').read()).hexdigest()
+              assert h == a['sha256'], a['filename']
+          print('artifact hashes re-verified')
+          EOF
+          shred -u /tmp/op.key || rm -f /tmp/op.key
+
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""; case "${GITHUB_REF_NAME}" in *-*) PRE="--prerelease";; esac
+          NOTES="$(python3 -c "
+          import json
+          man = json.load(open('/tmp/upd/update-manifest.json'))['manifest']
+          lines = ['Connective %s (%s channel)' % (man['version'], man['channel']), '']
+          lines += ['- ' + n for n in man.get('release_notes', [])] or ['- Maintenance release.']
+          lines += ['', 'Artifacts:']
+          lines += ['- %s (%s, %d bytes)' % (a['filename'], a['type'], a['size']) for a in man['artifacts']]
+          lines += ['', 'Install: download the .rpm below, or update from inside the app (Settings → UPDATES).']
+          print('\n'.join(lines))")"
+          # shellcheck disable=SC2086
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" \
+            --notes "$NOTES" $PRE \
+            ~/rpmbuild/RPMS/x86_64/*.rpm \
+            /tmp/upd/full-*.zip /tmp/upd/delta-*.zip \
+            /tmp/upd/update-manifest.json /tmp/upd/update-manifest.json.sig
