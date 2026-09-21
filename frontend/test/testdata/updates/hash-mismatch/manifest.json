@@ -1,0 +1,25 @@
+{
+  "manifest": {
+    "manifest_version": 1,
+    "version": "0.3.0",
+    "channel": "stable",
+    "release_date": "2026-09-21",
+    "release_notes": [
+      "Corrupt"
+    ],
+    "minimum_version": "0.2.0",
+    "platform": "linux",
+    "architecture": "x86_64",
+    "artifacts": [
+      {
+        "type": "full",
+        "filename": "full.zip",
+        "size": 135,
+        "sha256": "0b0b6c608bddf1964ee3702d0bd96e3f18c16f0627e984ce6c0b2acfb2733bbe",
+        "url": "full.zip"
+      }
+    ]
+  },
+  "signature": "023f287f224226cbb62358a04f1a4bdbe490acabcd07559d8051e98460135cc177441bc8333af488a6f5e4ee4386af035b0f02fdf637e4502a8bc4070f5aaf01",
+  "key_id": "test-key-1"
+}

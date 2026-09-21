@@ -1,0 +1,25 @@
+{
+  "manifest": {
+    "manifest_version": 1,
+    "version": "0.2.0",
+    "channel": "stable",
+    "release_date": "2026-09-21",
+    "release_notes": [
+      "Current"
+    ],
+    "minimum_version": "0.2.0",
+    "platform": "linux",
+    "architecture": "x86_64",
+    "artifacts": [
+      {
+        "type": "full",
+        "filename": "full.zip",
+        "size": 133,
+        "sha256": "e647880eff0dc3d41bebf4f9bc94bd75f42276026b9213e2fee668a5c4ea28b4",
+        "url": "full.zip"
+      }
+    ]
+  },
+  "signature": "56016f52bf11f356b56a6c0a58da03510ce3dcb6514e0d938451bc58ff72b76bf6a5ac4356a9bdbc03ea2302c2cb8a23dac7df04a4acdcbedb6969d55f95910f",
+  "key_id": "test-key-1"
+}
