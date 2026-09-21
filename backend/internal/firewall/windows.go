@@ -117,14 +117,13 @@ func ReadPolicy(r platform.Runner) (string, error) {
 		return "", err
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if !strings.Contains(line, "Firewall Policy") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Firewall Policy") {
 			continue
 		}
-		rest := line
+		rest := strings.TrimPrefix(line, "Firewall Policy")
 		if i := strings.Index(rest, ":"); i >= 0 {
 			rest = rest[i+1:]
-		} else {
-			rest = strings.TrimPrefix(rest, "Firewall Policy")
 		}
 		if p := strings.ReplaceAll(strings.TrimSpace(rest), " ", ""); p != "" {
 			// Sanity: a policy is comma-joined inbound/outbound halves.
