@@ -44,6 +44,7 @@ done
 chmod 755 %{buildroot}/opt/connective/connective
 chmod 755 %{buildroot}/opt/connective/connectived
 chmod 755 %{buildroot}/opt/connective/connective-helper
+chmod 755 %{buildroot}/opt/connective/connective-updater
 chmod 755 %{buildroot}/opt/connective/sing-box
 
 install -d %{buildroot}%{_bindir}
