@@ -52,6 +52,11 @@ jobs:
           Expand-Archive C:\sblab.zip -DestinationPath C:\sblab -Force
           Copy-Item "C:\sblab\sing-box-$env:SINGBOX_VERSION-windows-amd64\sing-box.exe" "$sbdir\sing-box.exe" -Force
           if (-not (Test-Path "$sbdir\sing-box.exe")) { throw "lab sing-box missing" }
+          # Downloads carry Mark-of-the-Web; unblock or Windows may
+          # refuse to execute the core.
+          Unblock-File "$sbdir\sing-box.exe"
+          Unblock-File "$HOME\.local\share\connective\lab-bin\connectived.exe"
+          & "$sbdir\sing-box.exe" version
 
       - name: frontend checks
         working-directory: frontend
@@ -89,6 +94,7 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/$sb.zip" -OutFile C:\sb.zip
           Expand-Archive C:\sb.zip -DestinationPath C:\sb
           Copy-Item "C:\sb\$sb\sing-box.exe" C:\dist\sing-box.exe
+          Unblock-File C:\dist\sing-box.exe
           Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-$env:WINTUN_VERSION.zip" -OutFile C:\wintun.zip
           Expand-Archive C:\wintun.zip -DestinationPath C:\wintun
           Copy-Item "C:\wintun\wintun\bin\amd64\wintun.dll" C:\dist\wintun.dll

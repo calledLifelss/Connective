@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:connective/main.dart';
 import 'package:connective/state/app_store.dart';
 import 'package:flutter/material.dart';
@@ -62,7 +64,7 @@ void main() {
         find.byType(ConnectiveApp),
         matchesGoldenFile(
             'goldens/dashboard-disconnected.png'));
-  });
+  }, skip: Platform.isWindows); // Linux-rendered pixel references; see docs/WINDOWS.md
 
   testWidgets('golden servers expanded', (t) async {
     await t.pumpWidget(SizedBox(
@@ -85,7 +87,7 @@ void main() {
     await expectLater(
         find.byType(ConnectiveApp),
         matchesGoldenFile('goldens/servers-expanded.png'));
-  });
+  }, skip: Platform.isWindows); // Linux-rendered pixel references; see docs/WINDOWS.md
 
   testWidgets('golden dashboard connected', (t) async {
     await t.runAsync(() async {
@@ -104,5 +106,5 @@ void main() {
     await expectLater(
         find.byType(ConnectiveApp),
         matchesGoldenFile('goldens/dashboard-connected.png'));
-  });
+  }, skip: Platform.isWindows); // Linux-rendered pixel references; see docs/WINDOWS.md
 }

@@ -143,6 +143,12 @@ yet); deltas follow automatically once a base release exists.
   use proxy-only mode (TUN off), same as Linux.
 - Backend log: `%LOCALAPPDATA%\Connective\` + in-app Logs page.
 
+## CI testing notes
+
+Pixel goldens (`golden_test.dart`) are Linux-rendered references and
+skip on Windows (font rasterization differs per OS); layout coverage
+on Windows comes from the widget tests themselves, which run fully.
+
 ## Limitations (honest)
 
 - Bare-metal validation (real adapter traffic, sleep/resume,
