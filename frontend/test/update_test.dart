@@ -19,7 +19,10 @@ import 'lab.dart';
 void main() {
   String fixture(String name) {
     // test/testdata/updates/<name> relative to the package root.
+    // Fixtures carry a manifest platform, so Windows uses the -win
+    // variants (same bytes, windows platform field).
     final root = Directory.current.path;
+    if (Platform.isWindows) name = '$name-win';
     return '$root/test/testdata/updates/$name';
   }
 

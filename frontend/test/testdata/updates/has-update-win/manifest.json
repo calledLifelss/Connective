@@ -9,7 +9,7 @@
       "Fixture fix two"
     ],
     "minimum_version": "0.2.0",
-    "platform": "linux",
+    "platform": "windows",
     "architecture": "x86_64",
     "artifacts": [
       {
@@ -21,6 +21,6 @@
       }
     ]
   },
-  "signature": "a12a730735e263a9770b42f00b084e20820f0165c6ceee97ddaa4f776b5f0b43133455e8769fcecb38c44a7b78c23f7996bdefeecaa6ee07e5d83449cf5f790e",
+  "signature": "b9ef09db50ee3895f3d13060934c81b1e152f11c21162f8ebb7beb7293865a86f57a2c951085d6dcae5f2332c6198d1940c451a4d02f623a356abd115734a00e",
   "key_id": "test-key-1"
 }

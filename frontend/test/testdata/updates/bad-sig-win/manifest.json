@@ -1,25 +1,25 @@
 {
   "manifest": {
     "manifest_version": 1,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "channel": "stable",
     "release_date": "2026-09-21",
     "release_notes": [
-      "Current"
+      "Evil"
     ],
     "minimum_version": "0.2.0",
-    "platform": "linux",
+    "platform": "windows",
     "architecture": "x86_64",
     "artifacts": [
       {
         "type": "full",
         "filename": "full.zip",
-        "size": 133,
-        "sha256": "e647880eff0dc3d41bebf4f9bc94bd75f42276026b9213e2fee668a5c4ea28b4",
+        "size": 132,
+        "sha256": "975197133e5d1805f7d553483ec31cabf26ecd335a402f1689eac2752b268e05",
         "url": "full.zip"
       }
     ]
   },
-  "signature": "f5c84aa80e278f8b971ed4e5fdb846e770e8bbea98c2d800155c5d681bf74d5ee7723d373e2adc35547a2030fee609c4d37c4a4983c29251da474514012ef60f",
+  "signature": "e01d4cf534977e9f13404bb3d3c11fc28515b5ee0376993331bf4fc9544158d8755321e1794c84c20b5d39bd43d9011441a1c40cdeec802b34d695a6edf6020d",
   "key_id": "test-key-1"
 }
