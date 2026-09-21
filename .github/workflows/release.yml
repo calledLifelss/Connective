@@ -51,6 +51,7 @@ jobs:
           go build -o /tmp/dist/connectived ./cmd/connectived
           go build -o /tmp/dist/connective-helper ./cmd/connective-helper
           go build -o /tmp/dist/connective-updater ./cmd/connective-updater
+          chmod 755 /tmp/dist/*
 
       - name: fetch sing-box
         run: |
@@ -87,7 +88,8 @@ jobs:
           # RPM versions cannot contain '-': 0.2.1-test.1 → tarball/topdir
           # use 0.2.1 (spec Release carries the test suffix).
           RPMVER="${VER%%-*}"
-          cp /tmp/dist/connectived /tmp/dist/connective-helper /tmp/dist/sing-box \
+          cp /tmp/dist/connectived /tmp/dist/connective-helper \
+            /tmp/dist/connective-updater /tmp/dist/sing-box \
             frontend/build/linux/x64/release/bundle/
           mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           rm -rf /tmp/rpmsrc && mkdir -p "/tmp/rpmsrc/connective-$RPMVER"
