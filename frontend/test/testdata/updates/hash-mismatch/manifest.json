@@ -1,7 +1,7 @@
 {
   "manifest": {
     "manifest_version": 1,
-    "version": "0.3.0",
+    "version": "0.3.1",
     "channel": "stable",
     "release_date": "2026-09-21",
     "release_notes": [
@@ -20,6 +20,6 @@
       }
     ]
   },
-  "signature": "bb346e77e1e1090eec65896b8711ea151c1a62d8c7a501ce2a7f10b46bc86d35ed2ee961ddeb003e2fc3ca653ac41734508558b756a1286af81b44d2b89be708",
+  "signature": "794dfeeddda8df20eb0ad77fadc066067332acf38847918c03ae20dbd1073f59bf3990bacb350ac06330faaf4b0d7693a7ff6474e0edfd4886bf5979ebc6bf08",
   "key_id": "test-key-1"
 }

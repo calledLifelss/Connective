@@ -40,6 +40,45 @@ void main() {
     }
   }
 
+  /// The connection section grew (circular power button): server rows
+  /// sit below the fold in the 600px test viewport, so the lazy
+  /// SliverList only builds them once scrolled into view — like a
+  /// real user would. Drags until the target's center is actually
+  /// inside the viewport (built ≠ tappable: the cache extent builds
+  /// rows a few px offscreen).
+  /// `.first` finders throw instead of going empty — normalize.
+  bool wasFound(WidgetTester tester, Finder f) {
+    try {
+      return f.evaluate().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  double? centerYOf(WidgetTester tester, Finder f) {
+    try {
+      return tester.getCenter(f).dy;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> see(WidgetTester tester, Finder f) async {
+    final view = find.byKey(const Key('dash-scroll'));
+    for (var i = 0; i < 8; i++) {
+      final y = wasFound(tester, f) ? centerYOf(tester, f) : null;
+      if (y == null) {
+        await tester.drag(view, const Offset(0, -500));
+        await settle(tester);
+        continue;
+      }
+      if (y > 60 && y < 540) break;
+      await tester.drag(view, Offset(0, y <= 60 ? 250 : -250));
+      await settle(tester);
+    }
+    await settle(tester);
+  }
+
   Future<void> flushTimers(WidgetTester tester) async {
     await tester.pump(const Duration(seconds: 30));
   }
@@ -72,17 +111,20 @@ void main() {
     await settle(tester);
 
     // Subscription + servers appear inline, no navigation needed.
+    await see(tester, find.text('T1'));
     expect(find.text('Lab'), findsOneWidget);
     expect(find.text('T1'), findsOneWidget);
     expect(find.text('T2'), findsOneWidget);
 
     // Collapse hides servers, keeps the subscription visible.
+    await see(tester, find.text('Lab'));
     await tester.tap(find.text('Lab'));
     await settle(tester);
     expect(find.text('T1'), findsNothing);
     expect(find.text('Lab'), findsOneWidget);
     await tester.tap(find.text('Lab'));
     await settle(tester);
+    await see(tester, find.text('T1'));
     expect(find.text('T1'), findsOneWidget);
 
     // Server row expands inline to technical details and collapses.
@@ -116,6 +158,7 @@ void main() {
     // Still on the dashboard: fetch servers, sub appears with T1/T2.
     await tester.runAsync(() => store.updateSubscriptions());
     await settle(tester);
+    await see(tester, find.text('T1'));
     expect(find.text('Lab'), findsOneWidget);
     expect(find.text('T1'), findsOneWidget);
     expect(find.text('T2'), findsOneWidget);
@@ -130,6 +173,7 @@ void main() {
     await settle(tester);
 
     // Select T2 (selection only — must NOT connect by itself).
+    await see(tester, find.byTooltip('Select for connection').first);
     await tester.tap(
         find.byTooltip('Select for connection').first);
     await tester.runAsync(
@@ -149,6 +193,7 @@ void main() {
     expect(store.connectionState, 'disconnected');
 
     // Back to AUTO.
+    await see(tester, find.text('Use Auto'));
     await tester.tap(find.text('Use Auto'));
     await tester.runAsync(
         () => Future.delayed(const Duration(seconds: 1)));
@@ -238,6 +283,7 @@ void main() {
     await tester.enterText(
         find.byKey(const Key('dash-search')), '');
     await settle(tester);
+    await see(tester, find.text('T2'));
     expect(find.text('T2'), findsOneWidget);
 
     // Servers management page still works.
