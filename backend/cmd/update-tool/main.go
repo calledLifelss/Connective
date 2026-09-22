@@ -140,9 +140,15 @@ func genManifest(args []string) error {
 	for _, spec := range fs.Args() {
 		// type:file[:from]; file may carry a url override via =url suffix:
 		//   full:bundle.zip  delta:patch.zip:0.2.0
-		parts := strings.SplitN(spec, ":", 3)
-		if len(parts) < 2 {
-			return fmt.Errorf("bad artifact spec %q (want type:file[:from])", spec)
+		// Windows drive letters contain a colon (C:\...), so the split
+		// is drive-aware (see splitSpec).
+		typ, file, from, err := splitSpec(spec)
+		if err != nil {
+			return err
+		}
+		parts := []string{typ, file}
+		if from != "" {
+			parts = append(parts, from)
 		}
 		sum, size, err := hashFile(parts[1])
 		if err != nil {
@@ -172,6 +178,33 @@ func genManifest(args []string) error {
 	}
 	fmt.Printf("manifest for %s (%d artifacts) -> %s\n", m.Version, len(m.Artifacts), *out)
 	return nil
+}
+
+// splitSpec parses "type:file[:from]", tolerating Windows drive
+// letters (C:\...) in the file part. A trailing :from_version is only
+// recognized when it parses as a version; anything else stays part of
+// the filename (loud hash failure later if truly wrong).
+func splitSpec(spec string) (typ, file, from string, err error) {
+	i := strings.Index(spec, ":")
+	if i <= 0 {
+		return "", "", "", fmt.Errorf("bad artifact spec %q (want type:file[:from])", spec)
+	}
+	typ, rest := spec[:i], spec[i+1:]
+	start := 0
+	if len(rest) >= 3 && rest[1] == ':' && isDriveLetter(rest[0]) &&
+		(rest[2] == '\\' || rest[2] == '/') {
+		start = 3
+	}
+	if j := strings.LastIndex(rest[start:], ":"); j >= 0 {
+		if _, verr := update.ParseVersion(rest[start+j+1:]); verr == nil {
+			return typ, rest[:start+j], rest[start+j+1:], nil
+		}
+	}
+	return typ, rest, "", nil
+}
+
+func isDriveLetter(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 func splitNotes(s string) []string {
