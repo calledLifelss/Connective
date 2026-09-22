@@ -88,7 +88,7 @@ jobs:
       - name: version guard
         shell: pwsh
         run: |
-          if ($env:VER -eq "0.0.0-dev") { exit 0 }
+          if ($env:GITHUB_REF_NAME -notlike 'v*') { exit 0 } # branches: no version to check
           Select-String -Path frontend\pubspec.yaml -Pattern "^version: $env:VER" -Quiet | ForEach-Object { if (-not $_) { throw "pubspec version mismatch" } }
           Select-String -Path backend\internal\update\version.go -Pattern "CurrentVersion = `"$env:VER`"" -Quiet | ForEach-Object { if (-not $_) { throw "backend version mismatch" } }
 
