@@ -11,6 +11,7 @@ Repository: `git@github.com:calledLifelss/Connective.git`
 | test | `v0.2.1-test.1` | 0.2.1-test.1 (RPM `0.2.1-0.test.1`) | beta | published |
 | prerelease | `v0.3.0-beta.1` | 0.3.0-beta.1 (RPM `0.3.0-0.beta.1`) | beta | published (Windows x64 train, installer + updater) |
 | stable | `v0.3.0` | 0.3.0 (RPM `0.3.0-1`) | stable | published: RPM, Windows setup, full zips, signed per-platform manifests |
+| stable | `v0.3.1` | 0.3.1 (RPM `0.3.1-1`) | stable | published: finishing updater (restart-to-activate), versioned /opt layout |
 
 Version is coherent across Flutter pubspec, Go `CurrentVersion`,
 RPM spec, manifest, and tag (CI `version guard` enforces this).
