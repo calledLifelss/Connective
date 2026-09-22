@@ -51,7 +51,7 @@ Frame: `{"v":"1","id":"<req id>","type":"<method|event>","payload":{...},"error"
 | `update.status` | — | `{state, info?, progress, error?, channel, currentVersion, lastCheckUnix}` |
 | `update.download` | — | snapshot; download runs async, progress via `event.update` |
 | `update.cancel` | — | snapshot after cancelling in-flight work |
-| `update.install` | — | snapshot; stage/activate async, result via `event.update` |
+| `update.install` | — | snapshot; assembles, spawns the detached installer, moves to `restarting` (close the app to finish); result via `event.update` + boot announcement |
 | `update.dismiss` | — | snapshot after hiding the available update |
 
 Phase-1 daemon implements: `ping`, `state.get`, `settings.get`,

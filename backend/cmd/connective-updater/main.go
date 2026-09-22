@@ -1,17 +1,16 @@
 // Command connective-updater performs update activation outside the
-// running application: verify staged tree → atomically switch versions →
-// launch the new build → health-check → roll back on failure.
+// running application: wait for the app to close → sanity-check the
+// staged tree → atomically switch versions → report for the next boot.
 //
-// Flow: Connective exits → updater installs → updater launches
-// Connective → updater exits. The updater survives the main process
-// exiting because the daemon spawns it detached with explicit paths;
-// it never trusts the provider for locations (root is an operator flag,
-// confined by the installer).
+// Flow: app stages + spawns updater, user closes the app, updater
+// installs, user starts the app again (which announces updated/failed
+// from the updater's report). The updater never touches the network
+// and never trusts the provider: all locations come from argv.
 //
 // Usage:
 //
-//	connective-updater apply --install-root DIR --version X.Y.Z \
-//	  --launch /path/to/new/connective [--health-timeout 60s]
+//	connective-updater apply --install-root DIR --version X.Y.Z
+//	  --result-file PATH [--wait-timeout 15m] [--launch BIN]
 package main
 
 import (
@@ -19,7 +18,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"connective/backend/internal/update"
@@ -34,39 +32,34 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 || args[0] != "apply" {
-		return fmt.Errorf("usage: connective-updater apply --install-root DIR --version VER [--launch BIN]")
+		return fmt.Errorf("usage: connective-updater apply --install-root DIR --version VER [--result-file PATH] [--launch BIN]")
 	}
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
-	root := fs.String("install-root", "", "versioned install root")
-	version := fs.String("version", "", "target version (must be assembled)")
-	launch := fs.String("launch", "", "new binary to launch after activation")
-	health := fs.Duration("health-timeout", 60*time.Second, "new-version health deadline")
-	if err := fs.Parse(args[1:]); err != nil {
-		return err
-	}
-	if *root == "" || *version == "" {
-		return fmt.Errorf("install-root and version are required")
-	}
-	in := &update.Installer{Root: *root, HealthTimeout: *health}
-	prev, err := in.Activate(*version)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("activated %s (previous %s)\n", *version, prev)
+	return runApply(fs, args[1:])
+}
 
-	ready := func() bool { return in.Current() == *version }
-	if *launch != "" {
-		cmd := exec.Command(*launch)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+// waitExit polls for app processes (stubbed in tests: the dev machine
+// itself runs connective builds).
+var waitExit = waitForExit
+
+// launchAndCheck starts the new build and health-checks it, rolling
+// back on failure. Used with --launch (tests/future); production v1
+// lets the user start the app normally instead of launching a GUI
+// from a privileged process.
+func launchAndCheck(in *update.Installer, launch, version string) error {
+	ready := func() bool { return in.Current() == version }
+	pid := 0
+	if launch != "" {
+		cmd := startDetached(launch)
+		if cmd == nil {
+			return fmt.Errorf("launch: unsupported platform")
+		}
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("launch: %w", err)
 		}
-		// The child outlives us by design (daemon re-parenting);
-		// health is observed through the install root + process liveness.
-		pid := cmd.Process.Pid
+		pid = cmd.Process.Pid
 		ready = func() bool {
-			return processAlive(pid) && in.Current() == *version
+			return processAlive(pid) && in.Current() == version
 		}
 		_ = cmd.Process.Release()
 	}
@@ -78,6 +71,7 @@ func run(args []string) error {
 		}
 		return err
 	}
-	fmt.Printf("update to %s healthy\n", *version)
+	fmt.Printf("update to %s healthy\n", version)
+	_ = time.Now
 	return nil
 }

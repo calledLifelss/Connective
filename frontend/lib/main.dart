@@ -92,12 +92,14 @@ class _ConnectiveAppState extends State<ConnectiveApp>
   @override
   void initState() {
     super.initState;
+    widget.store.quitApp = _quit;
     trayManager.addListener(this);
     windowManager.addListener(this);
   }
 
   @override
   void dispose() {
+    widget.store.quitApp = null;
     trayManager.removeListener(this);
     windowManager.removeListener(this);
     // NOTE: the store is injected (owned by main/test), never disposed here.

@@ -121,10 +121,12 @@ startup with the same user-facing error contract as Linux.
 %LOCALAPPDATA%\Connective\        user data (never touched by install)
 ```
 
-Activation rewrites `current.txt` (atomic file replace); a future
-launcher stub will resolve it (shortcuts currently target the
-versioned exe directly). The updater runs elevated (Program Files
-writes), so symlink-based activation remains valid there too.
+Activation rewrites `current.txt` (atomic file replace) plus the
+`current` symlink; existing Start Menu / desktop shortcuts are
+repointed at the new versioned exe by the updater (only links the
+installer created — no new icons appear). The updater runs elevated
+(Program Files writes), so symlink-based activation remains valid
+there too.
 
 ## Updater
 

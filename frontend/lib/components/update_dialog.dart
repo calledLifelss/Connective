@@ -76,16 +76,28 @@ class _Body extends StatelessWidget {
                 state: state,
                 progress: store.updateProgress),
           if (state == UpdateStates.updated)
+            Row(
+              children: [
+                const Icon(Icons.check_circle,
+                    color: ConnectiveTheme.success),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(
+                        'Connective is now running ${info?.version ?? 'the new version'}.')),
+              ],
+            ),
+          if (state == UpdateStates.restarting) ...[
             const Row(
               children: [
-                Icon(Icons.check_circle,
-                    color: ConnectiveTheme.success),
+                Icon(Icons.restart_alt,
+                    color: ConnectiveTheme.accent),
                 SizedBox(width: 8),
                 Expanded(
                     child: Text(
-                        'Updated. Restart Connective to run the new version.')),
+                        'The new version is ready. Close Connective to finish installing — your VPN disconnects — then start it again from the menu.')),
               ],
             ),
+          ],
           if (state == UpdateStates.failed &&
               store.updateError != null) ...[
             const SizedBox(height: 4),
@@ -112,6 +124,21 @@ List<Widget> _actions(BuildContext context, AppStore store) {
         onPressed: pop,
         child: Text(label),
       );
+  if (state == UpdateStates.restarting) {
+    // Restarting is "busy" but Cancel cannot recall a spawned
+    // installer — the only honest actions are restart or wait.
+    return [
+      later('Not now'),
+      FilledButton(
+        key: const Key('update-dialog-restart'),
+        onPressed: () {
+          pop();
+          store.restartForUpdate();
+        },
+        child: const Text('Restart now'),
+      ),
+    ];
+  }
   if (store.updateBusy) {
     return [
       TextButton(

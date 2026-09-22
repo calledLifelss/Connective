@@ -76,6 +76,13 @@ func (d *Daemon) initUpdates() {
 		Provider: updateProviderFromEnv(),
 		Keys:     trustedKeysFromEnv(),
 		DataDir:  dataDir,
+		DaemonExe: func() string {
+			exe, err := os.Executable()
+			if err != nil {
+				return ""
+			}
+			return exe
+		}(),
 		Channel: func() string {
 			d.mu.Lock()
 			defer d.mu.Unlock()

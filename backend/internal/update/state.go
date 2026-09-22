@@ -24,6 +24,9 @@ const (
 var allowed = map[string]map[string]bool{
 	StateIdle: {
 		StateChecking: true,
+		// Boot seeds from the updater's report (see reconcileBoot):
+		// a consumed result announces updated/failed once.
+		StateUpdated: true, StateFailed: true,
 	},
 	StateChecking: {
 		StateNoUpdate: true, StateUpdateAvailable: true,

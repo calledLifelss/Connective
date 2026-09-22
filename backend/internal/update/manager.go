@@ -52,6 +52,15 @@ type Manager struct {
 	// DataDir roots staging (updates/) and the check cache.
 	DataDir string
 
+	// DaemonExe is the running connectived binary (os.Executable).
+	// Production resolves the install root + updater from it; empty
+	// means "no updater here" (tests without the hook below).
+	DaemonExe string
+
+	// Spawn launches the updater detached. Nil = the platform default
+	// (pkexec/UAC elevation). Tests override it to capture argv.
+	Spawn func(bin string, args []string, dataDir string) error
+
 	CurrentVersion func() string // default: CurrentVersion const
 	Channel        func() string // daemon: settings snapshot
 	AutoCheck      func() bool
@@ -137,7 +146,46 @@ func (m *Manager) Init() error {
 	}
 	m.cache = c
 	m.status = Status{State: StateIdle, Channel: m.channel(), Current: m.current()}
+	m.reconcileBoot()
 	return nil
+}
+
+// reconcileBoot consumes leftover handoff files (see handoff.go) and
+// seeds one boot announcement: updated when the updater's result
+// matches this build, failed when it reports failure. A result-less
+// pending is cleared silently (updater never ran — retry is offered
+// fresh instead of wedging).
+func (m *Manager) reconcileBoot() {
+	seed := reconcileBoot(m.DataDir)
+	if seed == nil {
+		return
+	}
+	m.pending = &Release{Manifest: SignedManifest{
+		Manifest: Manifest{Version: seed.version},
+	}}
+	m.artifact = nil
+	m.staged = ""
+	m.assembled = ""
+	if seed.ok {
+		m.cache.LastSeenVersion = seed.version
+		m.saveCache()
+		m.setState(StateUpdated, "")
+		if m.log() != nil {
+			m.log().Info("update: %s active after restart", seed.version)
+		}
+		return
+	}
+	m.setState(StateFailed, ifEmpty(seed.errMsg, failedSpawnError()))
+	if m.log() != nil {
+		m.log().Warn("update: installer reported failure: %v", seed.errMsg)
+	}
+}
+
+func ifEmpty(s, alt string) string {
+	if s == "" {
+		return alt
+	}
+	return s
 }
 
 func (m *Manager) saveCache() {
@@ -518,11 +566,22 @@ func (m *Manager) Install(ctx context.Context) Status {
 	m.assembled = dir
 	m.setState(StateInstalling, "")
 	if !m.TestApply {
-		// Production: the updater process owns activation (see
-		// cmd/connective-updater). The daemon reports installing and
-		// the updater takes it from staging.
+		// Production: hand activation to the detached updater and
+		// move to restarting — the app must close so locked files
+		// (Windows) and the running tree can be replaced. The
+		// updater reports via updates/result.json, consumed at the
+		// next boot (see reconcileBoot). Nothing here may block.
+		if herr := m.handoff(dir, ver); herr != nil {
+			os.Remove(pendingPath(m.DataDir))
+			m.setState(StateFailed, friendlySpawnError(herr))
+			if m.log() != nil {
+				m.log().Error("update: installer handoff: %v", herr)
+			}
+			return m.snapshot()
+		}
+		m.setState(StateRestarting, "")
 		if m.log() != nil {
-			m.log().Info("update: staged at %s, awaiting updater activation", dir)
+			m.log().Info("update: %s staged, installer started — restart to finish", ver)
 		}
 		return m.snapshot()
 	}
@@ -556,6 +615,25 @@ func (m *Manager) Install(ctx context.Context) Status {
 		m.log().Info("update: %s active (prev %s)", ver, prev)
 	}
 	return m.snapshot()
+}
+
+// handoff writes the updater contract and spawns the detached
+// installer. dir is the assembled tree (kept for the log only).
+func (m *Manager) handoff(dir, ver string) error {
+	root := resolveInstallRoot(m.DaemonExe, m.DataDir)
+	bin := resolveUpdaterBin(m.DaemonExe, root)
+	if bin == "" {
+		return fmt.Errorf("update: installer binary not found")
+	}
+	pend := PendingUpdate{Version: ver, Root: root, Updater: bin, AtUnix: m.now().Unix()}
+	if err := writeJSON(pendingPath(m.DataDir), pend); err != nil {
+		return err
+	}
+	spawn := m.Spawn
+	if spawn == nil {
+		spawn = spawnUpdaterDetached
+	}
+	return spawn(bin, spawnArgs(bin, root, ver, resultPath(m.DataDir)), m.DataDir)
 }
 
 // Cancel aborts an in-flight download/install step.

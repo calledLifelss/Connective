@@ -133,6 +133,15 @@ class AppStore extends ChangeNotifier {
       updateState == UpdateStates.available && updateInfo != null;
   bool get updateBusy => UpdateStates.isBusy(updateState);
 
+  /// Set by the app shell (main.dart): quit UI + owned backend, used
+  /// by the update-restart flow. Unset in widget tests (no-op there).
+  Future<void> Function()? quitApp;
+
+  /// Close the app so the detached installer can replace it.
+  Future<void> restartForUpdate() async {
+    await quitApp?.call();
+  }
+
   // --- presentation ---
   final Map<String, bool> subscriptionExpanded = {};
   final Set<String> expandedServers = {};

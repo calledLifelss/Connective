@@ -44,7 +44,20 @@ Impossible transitions are rejected (`Transition`). Events are emitted
 synchronously in emission order — a late stale snapshot must never
 overwrite newer state (regression-tested).
 
-## Versioned installation layout (target model)
+## Activation (implemented in 0.3.1)
+
+`update.install` assembles `versions/<target>` under the data-dir
+staging root, writes `updates/pending.json`, and spawns a detached
+`connective-updater apply` (pkexec on Linux, UAC on Windows) — then
+reports `restarting`. The user closes the app; the updater waits for
+its processes to exit, sanity-checks the tree, flips activation
+(`current` symlink on Linux, plus `current.txt` + shortcut rewrite on
+Windows), writes `updates/result.json`, and exits. The next boot
+consumes the report and announces `updated`/`failed`. No updater
+report (auth declined, killed) clears back to idle so the next check
+offers a retry — no state wedges.
+
+## Versioned installation layout
 
 ```
 <root>/versions/0.2.0/…   immutable installed trees
@@ -61,19 +74,12 @@ top-level folder either way. Per-platform manifests
 (`update-manifest-windows.json`, fallback `update-manifest.json`) let
 one release serve both OSes. See `docs/WINDOWS.md`.
 
-## RPM coexistence (no breakage today)
+## RPM layout (0.3.1+)
 
-The current Fedora package keeps its flat `/opt/connective/` layout.
-The updater code is capable of the versioned model NOW, and the RPM
-adopts it in a later step by one of:
-
-1. `%post` migration: copy the installed tree to
-   `/opt/connective/versions/<ver>/`, create the `current` symlink,
-   keep `/opt/connective/connective` as a symlink into it; or
-2. a `connective-versions` subpackage owning the new layout while the
-   main package stays a compatibility shim for one release.
-
-No migration runs until the GitHub provider + production signing land.
+The Fedora package installs immutable trees to
+`/opt/connective/versions/<ver>/` with `current` flipped atomically on
+update; `/opt/connective/connective` (and siblings) are symlinks into
+`current/` so `/usr/bin/connective` and launchers survive updates.
 `connectived` itself never self-replaces: activation is always the
 updater process after the app exits.
 

@@ -1,5 +1,5 @@
 Name:           connective
-Version:        0.3.0
+Version:        0.3.1
 Release:        1%{?dist}
 Summary:        Modern desktop VPN client (Flutter + Go + sing-box)
 License:        Apache-2.0 AND GPL-3.0-only
@@ -34,18 +34,26 @@ GPLv3 (Sagernet) with an additional naming condition; see
 
 %install
 rm -rf %{buildroot}
-install -d %{buildroot}/opt/connective
-cp -a bundle/* %{buildroot}/opt/connective/
+# Versioned layout for the in-app updater: immutable per-version trees
+# under versions/<ver>, `current` flipped atomically on update. The
+# top-level names stay as symlinks so /usr/bin/connective and existing
+# launchers keep working across updates.
+install -d %{buildroot}/opt/connective/versions/%{version}
+cp -a bundle/* %{buildroot}/opt/connective/versions/%{version}/
 # Strip build-tree RPATHs baked into plugin .so files (flutter build
 # artifact); the bundle resolves libs via $ORIGIN-relative layout.
-for so in %{buildroot}/opt/connective/lib/*.so; do
+for so in %{buildroot}/opt/connective/versions/%{version}/lib/*.so; do
   patchelf --remove-rpath "$so" 2>/dev/null || :
 done
-chmod 755 %{buildroot}/opt/connective/connective
-chmod 755 %{buildroot}/opt/connective/connectived
-chmod 755 %{buildroot}/opt/connective/connective-helper
-chmod 755 %{buildroot}/opt/connective/connective-updater
-chmod 755 %{buildroot}/opt/connective/sing-box
+chmod 755 %{buildroot}/opt/connective/versions/%{version}/connective
+chmod 755 %{buildroot}/opt/connective/versions/%{version}/connectived
+chmod 755 %{buildroot}/opt/connective/versions/%{version}/connective-helper
+chmod 755 %{buildroot}/opt/connective/versions/%{version}/connective-updater
+chmod 755 %{buildroot}/opt/connective/versions/%{version}/sing-box
+ln -s versions/%{version} %{buildroot}/opt/connective/current
+for b in connective connectived connective-helper connective-updater sing-box; do
+  ln -s current/$b %{buildroot}/opt/connective/$b
+done
 
 install -d %{buildroot}%{_bindir}
 ln -s /opt/connective/connective %{buildroot}%{_bindir}/connective
@@ -89,6 +97,11 @@ touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %changelog
+* Tue Sep 22 2026 Connective Team - 0.3.1-1
+- Updater that finishes: daemon hands activation to a detached
+  connective-updater (pkexec/UAC), app restarts into the new build,
+  result announced at next boot. RPM adopts the versioned
+  /opt/connective layout (versions/<ver> + current symlink).
 * Tue Sep 22 2026 Connective Team - 0.3.0-1
 - Stable 0.3.0: circular power connect button with orbit rings,
   traffic quota bar, concurrent IPC (no false backend-death on

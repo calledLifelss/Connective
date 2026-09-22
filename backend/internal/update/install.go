@@ -72,7 +72,10 @@ func (in *Installer) Assemble(ctx context.Context, target string, stagedArtifact
 		return "", err
 	}
 	if _, err := os.Lstat(dir); err == nil {
-		return "", fmt.Errorf("update: version %s already installed", target)
+		// Idempotent retry: the tree is renamed into place only
+		// after a complete unzip, so an existing dir is a finished
+		// assembly (e.g. app restarted between stage and close).
+		return dir, nil
 	}
 	staging, err := os.MkdirTemp(in.stagingDir(), "assemble-*")
 	if err != nil {
