@@ -70,12 +70,13 @@ const
   DataDirName = 'Connective';
 
 { Warn before replacing a live install: killing the core mid-tunnel
-  drops the VPN. The user disconnects first, or accepts the drop. }
+  drops the VPN. The user disconnects first, or accepts the drop.
+  Silent installs never prompt (automation owns the decision). }
 function InitializeSetup(): Boolean;
-var
-  Res: Integer;
 begin
   Result := True;
+  if WizardSilent() then
+    exit;
   if MsgBox('Installing will stop any running Connective (VPN disconnects). Continue?',
     mbConfirmation, MB_OKCANCEL) = IDCANCEL then
     Result := False;

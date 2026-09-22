@@ -139,19 +139,26 @@ jobs:
 
       - name: smoke install + launch
         shell: pwsh
+        timeout-minutes: 10
         run: |
           $setup = Get-ChildItem packaging\windows\installer-out\*-setup.exe | Select-Object -First 1
+          Write-Host "installing $($setup.FullName) ..."
           Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/DIR=C:\ConnectiveCI" -Wait
+          Write-Host "installed."
           $app = "C:\ConnectiveCI\versions\${{ env.VER }}\connective.exe"
           if (-not (Test-Path $app)) { throw "installed app missing: $app" }
+          Write-Host "launching $app ..."
           $p = Start-Process -FilePath $app -PassThru
           Start-Sleep -Seconds 20
           if ($p.HasExited) { throw "app exited during smoke launch" }
+          Write-Host "app alive."
           Get-Process -Name "connective*" | Select-Object Name, Id | Format-Table | Out-String | Write-Host
           Stop-Process -Name "connective*" -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
+          Write-Host "uninstalling ..."
           $un = "C:\ConnectiveCI\unins000.exe"
           if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES" -Wait }
+          Write-Host "uninstalled."
           if (Test-Path "C:\ConnectiveCI\versions") { throw "uninstall left the tree behind" }
 
       - name: update artifacts (tags only)
