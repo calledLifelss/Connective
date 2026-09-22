@@ -9,12 +9,37 @@ import 'dart:io';
 class BackendLauncher {
   Process? _child;
 
-  /// Socket path the UI will use.
+  /// Socket path the UI will use. Must mirror the daemon's
+  /// `platform.SocketPath()` exactly, or the UI can never find its
+  /// backend:
+  /// - `CONNECTIVE_SOCK` wins (tests, portable layouts);
+  /// - else `CONNECTIVE_DATA_DIR/connectived.sock` (the daemon honors
+  ///   this override on every OS);
+  /// - else the platform default: `%LOCALAPPDATA%\Connective` on
+  ///   Windows (the daemon ignores $HOME there), `$HOME/.local/share`
+  ///   elsewhere.
   static String socketPath() {
     final override = Platform.environment['CONNECTIVE_SOCK'];
     if (override != null && override.isNotEmpty) return override;
+    final dataDir = Platform.environment['CONNECTIVE_DATA_DIR'];
+    if (dataDir != null && dataDir.isNotEmpty) {
+      return _join(dataDir, 'connectived.sock');
+    }
+    if (Platform.isWindows) {
+      final base = Platform.environment['LOCALAPPDATA'] ??
+          Platform.environment['USERPROFILE'] ??
+          Platform.environment['HOME'] ??
+          Directory.systemTemp.path;
+      return _join(_join(base, 'Connective'), 'connectived.sock');
+    }
     final home = Platform.environment['HOME'] ?? '/tmp';
     return '$home/.local/share/connective/connectived.sock';
+  }
+
+  static String _join(String a, String b) {
+    final sep = Platform.pathSeparator;
+    if (a.endsWith(sep)) return '$a$b';
+    return '$a$sep$b';
   }
 
   /// Backend binary resolution: explicit path, sibling of the Flutter
@@ -78,10 +103,16 @@ class BackendLauncher {
     _child = null;
     if (c == null) return;
     try {
-      c.kill(ProcessSignal.sigterm);
+      // kill() without args is portable (SIGTERM on POSIX, terminate
+      // on Windows); explicit signals throw on Windows.
+      c.kill();
       await c.exitCode.timeout(const Duration(seconds: 3),
           onTimeout: () {
-        c.kill(ProcessSignal.sigkill);
+        try {
+          c.kill(ProcessSignal.sigkill);
+        } catch (_) {
+          c.kill();
+        }
         return c.exitCode;
       });
     } catch (_) {}

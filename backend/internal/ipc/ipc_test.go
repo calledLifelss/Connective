@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"net"
@@ -56,6 +57,74 @@ func TestErrors(t *testing.T) {
 	}
 	if err := c.Call("nope", nil, nil); err == nil {
 		t.Errorf("expected unknown-method error")
+	}
+}
+
+// A slow handler (connect, subscription refresh) must not stall fast
+// calls behind it: ping during a blocked request answers immediately.
+// Regression test for the "Backend unavailable on every connect" bug,
+// where serial handling pushed every slow call past the UI timeout.
+//
+// A raw connection is used (not Client.Call, which serializes calls
+// on its own mutex): both frames go down one connection, and the ping
+// response must arrive while the slow handler is still blocked.
+func TestSlowHandlerDoesNotBlockPing(t *testing.T) {
+	s, path := testServer(t)
+	release := make(chan struct{})
+	s.Handle("slow", func(p json.RawMessage) (any, error) {
+		<-release
+		return map[string]string{"done": "yes"}, nil
+	})
+	nc, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	send := func(id, method string) {
+		t.Helper()
+		frame, _ := json.Marshal(Message{V: Version, ID: id, Type: method})
+		nc.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		if _, err := nc.Write(append(frame, '\n')); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("1", "slow")
+	send("2", MethodPing)
+
+	nc.SetReadDeadline(time.Now().Add(5 * time.Second))
+	sc := bufio.NewScanner(nc)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	sawPing, sawSlow := false, false
+	pingFirst := false
+	for !(sawPing && sawSlow) {
+		if !sc.Scan() {
+			t.Fatalf("stalled: ping=%v slow=%v err=%v", sawPing, sawSlow, sc.Err())
+		}
+		var m Message
+		if err := json.Unmarshal(sc.Bytes(), &m); err != nil {
+			t.Fatal(err)
+		}
+		switch m.ID {
+		case "2":
+			sawPing = true
+			if !sawSlow {
+				pingFirst = true
+			}
+			// Let the slow call finish now that ping proved itself.
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		case "1":
+			sawSlow = true
+			if m.Error != "" {
+				t.Fatalf("slow call failed: %s", m.Error)
+			}
+		}
+	}
+	if !pingFirst {
+		t.Fatal("ping answered only after the slow handler finished")
 	}
 }
 

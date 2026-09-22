@@ -1,6 +1,6 @@
 Name:           connective
 Version:        0.3.0
-Release:        0.beta.1%{?dist}
+Release:        1%{?dist}
 Summary:        Modern desktop VPN client (Flutter + Go + sing-box)
 License:        Apache-2.0 AND GPL-3.0-only
 URL:            https://github.com/connective/connective
@@ -89,6 +89,10 @@ touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %changelog
+* Tue Sep 22 2026 Connective Team - 0.3.0-1
+- Stable 0.3.0: circular power connect button with orbit rings,
+  traffic quota bar, concurrent IPC (no false backend-death on
+  connect), per-call IPC timeouts, backend socket-path overrides.
 * Mon Sep 22 2026 Connective Team - 0.3.0-0.beta.1
 - Windows x64 prerelease train: Windows target, installer, updater.
 * Mon Sep 21 2026 Connective Team - 0.2.1-0.test.1

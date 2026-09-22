@@ -10,6 +10,19 @@ import 'dart:io';
 class DaemonClient {
   static const protocolVersion = '1';
 
+  /// Calls that legitimately outlive the snappy default: connect runs
+  /// latency probes, core startup and TUN/routing verification
+  /// (tens of seconds); disconnect stops the core plus privileged
+  /// cleanup; a subscription refresh fetches over the network with a
+  /// 5-minute daemon-side budget. Timing these out at 10s turned every
+  /// real-world connect into a false "Backend unavailable".
+  static const _timeouts = {
+    'connection.connect': Duration(seconds: 120),
+    'connection.disconnect': Duration(seconds: 60),
+    'subscriptions.update': Duration(seconds: 330),
+  };
+  static const _defaultTimeout = Duration(seconds: 10);
+
   Socket? _socket;
   final _pending = <String, Completer<Map<String, dynamic>?>>{};
   final _events = StreamController<Map<String, dynamic>>.broadcast();
@@ -71,7 +84,8 @@ class DaemonClient {
     final done = Completer<Map<String, dynamic>?>();
     _pending[id] = done;
     socket.write('${json.encode(frame)}\n');
-    return done.future.timeout(const Duration(seconds: 10), onTimeout: () {
+    final timeout = _timeouts[method] ?? _defaultTimeout;
+    return done.future.timeout(timeout, onTimeout: () {
       _pending.remove(id);
       throw TimeoutException('ipc $method timed out');
     }).then((resp) {

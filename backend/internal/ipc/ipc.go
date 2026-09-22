@@ -83,6 +83,16 @@ const (
 type Handler func(payload json.RawMessage) (any, error)
 
 // Server is a unix-socket JSON-RPC-style endpoint with event broadcast.
+//
+// Handlers run concurrently (one goroutine per request) so a slow call
+// such as connection.connect (core startup + TUN/routing verification,
+// tens of seconds) or subscriptions.update (minutes) never blocks fast
+// calls like ping or state.get behind it. The UI times a stalled call
+// out and reports "Backend unavailable" — serial handling therefore
+// turned every connect into a false backend-death report. Responses
+// funnel through the single per-connection writer, so frames never
+// interleave; clients match responses by id and already tolerate
+// out-of-order arrival.
 type Server struct {
 	mu       sync.Mutex
 	handlers map[string]Handler
@@ -90,6 +100,8 @@ type Server struct {
 
 	listener net.Listener
 	quit     chan struct{}
+	closeMu  sync.Mutex
+	closed   bool
 	wg       sync.WaitGroup
 }
 
@@ -107,13 +119,16 @@ func (s *Server) Handle(method string, h Handler) {
 
 // Serve accepts connections on l until Close.
 func (s *Server) Serve(l net.Listener) {
+	s.closeMu.Lock()
 	s.listener = l
 	s.quit = make(chan struct{})
+	quit := s.quit
+	s.closeMu.Unlock()
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			select {
-			case <-s.quit:
+			case <-quit:
 				return
 			default:
 				continue
@@ -124,10 +139,27 @@ func (s *Server) Serve(l net.Listener) {
 	}
 }
 
-// Close stops the server and all connections.
+// Close stops the server and all connections. It is idempotent: the
+// daemon calls it once on shutdown, and tests may defer it alongside
+// error paths.
 func (s *Server) Close() error {
-	close(s.quit)
-	err := s.listener.Close()
+	s.closeMu.Lock()
+	if s.closed {
+		s.closeMu.Unlock()
+		return nil
+	}
+	s.closed = true
+	quit := s.quit
+	l := s.listener
+	s.closeMu.Unlock()
+
+	if quit != nil {
+		close(quit)
+	}
+	var err error
+	if l != nil {
+		err = l.Close()
+	}
 	s.mu.Lock()
 	for c := range s.subs {
 		c.net.Close()
@@ -159,19 +191,27 @@ func (s *Server) Broadcast(event string, payload any) {
 type conn struct {
 	net  net.Conn
 	send chan Message
+	// done closes when the connection tears down; in-flight handler
+	// goroutines stop waiting on a dead writer via done instead of
+	// leaking. wg tracks those goroutines so teardown closes send
+	// only after the last response was queued (never send-on-closed).
+	done chan struct{}
+	wg   sync.WaitGroup
 }
 
 func (s *Server) serveConn(nc net.Conn) {
 	defer s.wg.Done()
-	c := &conn{net: nc, send: make(chan Message, 64)}
+	c := &conn{net: nc, send: make(chan Message, 256), done: make(chan struct{})}
 	s.mu.Lock()
 	s.subs[c] = struct{}{}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.subs, c)
-		close(c.send)
 		s.mu.Unlock()
+		close(c.done)
+		c.wg.Wait()
+		close(c.send)
 		nc.Close()
 	}()
 
@@ -210,19 +250,33 @@ func (s *Server) serveConn(nc net.Conn) {
 			c.send <- Message{V: Version, ID: req.ID, Type: req.Type, Error: "unknown method " + req.Type}
 			continue
 		}
-		out, err := h(req.Payload)
-		resp := Message{V: Version, ID: req.ID, Type: req.Type}
-		if err != nil {
-			resp.Error = err.Error()
-		} else if out != nil {
-			raw, merr := json.Marshal(out)
-			if merr != nil {
-				resp.Error = merr.Error()
-			} else {
-				resp.Payload = raw
+		// Slow handlers must not stall the read loop: ping/state.get
+		// arriving during a connect or subscription refresh are
+		// answered by their own goroutine. Responses carry the
+		// request id, so out-of-order arrival is fine. Lifetime is
+		// scoped to this connection (c.wg): teardown waits for
+		// in-flight handlers before closing send, so a response can
+		// never land on a closed channel.
+		c.wg.Add(1)
+		go func(req Message, h Handler) {
+			defer c.wg.Done()
+			out, err := h(req.Payload)
+			resp := Message{V: Version, ID: req.ID, Type: req.Type}
+			if err != nil {
+				resp.Error = err.Error()
+			} else if out != nil {
+				raw, merr := json.Marshal(out)
+				if merr != nil {
+					resp.Error = merr.Error()
+				} else {
+					resp.Payload = raw
+				}
 			}
-		}
-		c.send <- resp
+			select {
+			case c.send <- resp:
+			case <-c.done:
+			}
+		}(req, h)
 	}
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/subscription.dart';
 import '../state/app_store.dart';
+import '../theme/connective_theme.dart';
 import 'server_row.dart';
 
 /// Header row shared by the management cards and the Dashboard sliver
@@ -38,14 +39,8 @@ class SubscriptionHeader extends StatelessWidget {
                           style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 16)),
-                      const SizedBox(height: 2),
-                      Text(
-                        sub.traffic.summary(),
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.grey),
-                      ),
+                      const SizedBox(height: 4),
+                      TrafficBar(traffic: sub.traffic),
                     ],
                   ),
                 ),
@@ -93,6 +88,85 @@ class SubscriptionHeader extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Traffic quota bar: used/total progress with the label drawn
+/// centered on the bar and the expiry date at the end — the familiar
+/// subscription-remaining glance. The fill shifts accent → amber →
+/// red as the quota runs out. Falls back to the plain text summary
+/// when the subscription reports no quota, and renders nothing when
+/// there is no traffic data at all.
+class TrafficBar extends StatelessWidget {
+  final TrafficInfo traffic;
+
+  const TrafficBar({super.key, required this.traffic});
+
+  @override
+  Widget build(BuildContext context) {
+    if (traffic.hasLimit && traffic.total > 0) {
+      final fraction = traffic.usedFraction;
+      final fill = fraction >= 0.95
+          ? ConnectiveTheme.danger
+          : fraction >= 0.8
+              ? ConnectiveTheme.warning
+              : ConnectiveTheme.accent;
+      final expiry = traffic.expiryLabel();
+      return Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 20,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    LinearProgressIndicator(
+                      value: fraction,
+                      backgroundColor: ConnectiveTheme.surface2,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(fill),
+                    ),
+                    Center(
+                      child: Text(
+                        traffic.usageLabel(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (expiry.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Text(
+              expiry,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(
+                      color: ConnectiveTheme.textSecondary),
+            ),
+          ],
+        ],
+      );
+    }
+    final summary = traffic.summary();
+    if (summary.isEmpty) return const SizedBox.shrink();
+    return Text(
+      summary,
+      style: Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(color: Colors.grey),
     );
   }
 }

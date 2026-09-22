@@ -90,7 +90,7 @@ void main() {
     // Back to dashboard, connect through the real button.
     await tester.tap(find.text('Dashboard'));
     await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'Disconnected'));
+    await tester.tap(find.byKey(const Key('connect-button')));
     // The daemon needs real seconds to start the core: poll with
     // real-time waits between pumps.
     var connected = false;
@@ -103,7 +103,7 @@ void main() {
     expect(connected, isTrue);
 
     // Disconnect again.
-    await tester.tap(find.widgetWithText(FilledButton, 'Connected'));
+    await tester.tap(find.byKey(const Key('connect-button')));
     var gone = false;
     for (var i = 0; i < 6 && !gone; i++) {
       await tester.runAsync(

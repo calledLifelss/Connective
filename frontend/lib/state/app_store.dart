@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -379,12 +380,33 @@ class AppStore extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      // Any IPC failure marks the backend lost so the UI never shows
-      // stale "Connected" indefinitely (§7); recovery via reconnect().
-      _backendAlive = false;
+      // Only transport failures mean the backend is gone. Application
+      // errors (bad link, no servers, sing-box missing, guards) prove
+      // the backend answered — it must NOT flip the "Backend
+      // unavailable" banner, or every failed connect looks like a dead
+      // backend (§7).
+      if (_isTransportError(e)) {
+        _backendAlive = false;
+      }
       lastError = friendlyError(e);
       notifyListeners();
     }
+  }
+
+  /// True when [e] signals a broken IPC channel rather than a
+  /// backend-reported application error.
+  static bool _isTransportError(Object e) {
+    if (e is TimeoutException) return true;
+    if (e is SocketException) return true;
+    if (e is OSError) return true;
+    if (e is StateError) {
+      final m = e.message;
+      return m.contains('not connected to daemon') ||
+          m.contains('daemon gone');
+    }
+    final s = e.toString();
+    return s.contains('not connected to daemon') ||
+        s.contains('daemon gone');
   }
 
   /// Re-establish the backend connection (after death or at retry).
@@ -395,18 +417,33 @@ class AppStore extends ChangeNotifier {
           throw StateError('no backend address known');
         }
         if (client.isConnected) {
+          var pingOk = false;
           try {
             await client.call('ping');
-            await refreshAll();
-            return;
+            pingOk = true;
           } catch (_) {
-            client.close();
+            await client.close();
+          }
+          if (pingOk) {
+            await refreshAll();
+            _stayDeadIfRefreshFailed();
+            return;
           }
         }
         await client.connect(sock);
         attachEvents();
         await refreshAll();
+        _stayDeadIfRefreshFailed();
       });
+
+  /// refreshAll swallows its own failures (it is guarded too): when it
+  /// hit a transport error the backend must stay marked dead instead
+  /// of the outer guard flipping it back alive on apparent success.
+  void _stayDeadIfRefreshFailed() {
+    if (!_backendAlive) {
+      throw TimeoutException('ipc reconnect timed out');
+    }
+  }
 
   // --- loading ---
 

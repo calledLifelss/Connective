@@ -34,6 +34,28 @@ class TrafficInfo {
     return parts.join(' · ');
   }
 
+  /// Total consumed bytes (upload + download).
+  int get usedBytes => upload + download;
+
+  /// Fraction of the quota consumed, clamped to 0..1. Zero when the
+  /// subscription reports no limit (no bar to draw).
+  double get usedFraction {
+    if (!hasLimit || total <= 0) return 0;
+    return (usedBytes / total).clamp(0.0, 1.0);
+  }
+
+  /// "118 GB / 120 GB" label drawn centered on the traffic bar.
+  String usageLabel() => '${_gb(usedBytes)} / ${_gb(total)}';
+
+  /// "Expires 23.09.2026" or empty when unknown.
+  String expiryLabel() {
+    if (!hasExp || expire == null) return '';
+    final e = expire!;
+    final d =
+        '${e.day.toString().padLeft(2, '0')}.${e.month.toString().padLeft(2, '0')}.${e.year}';
+    return 'Expires $d';
+  }
+
   static String _gb(int bytes) {
     if (bytes <= 0) return '0 GB';
     return '${(bytes / 1e9).toStringAsFixed(0)} GB';

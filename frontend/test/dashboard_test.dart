@@ -210,7 +210,7 @@ void main() {
         findsOneWidget);
 
     // Disconnect from the connection section.
-    await tester.tap(find.widgetWithText(FilledButton, 'Connected'));
+    await tester.tap(find.byKey(const Key('connect-button')));
     var gone = false;
     for (var i = 0; i < 6 && !gone; i++) {
       await tester.runAsync(

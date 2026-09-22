@@ -207,7 +207,7 @@ void main() {
     await tester.tap(find.text('Dashboard'));
     await settle(tester);
     await tester
-        .tap(find.widgetWithText(FilledButton, 'Disconnected'));
+        .tap(find.byKey(const Key('connect-button')));
     var connected = false;
     for (var i = 0; i < 15 && !connected; i++) {
       await tester.pump(const Duration(seconds: 2));
@@ -248,7 +248,7 @@ void main() {
     // Disconnect through the REAL button; cleanup verified below.
     await tester.tap(find.text('Dashboard'));
     await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'Connected'));
+    await tester.tap(find.byKey(const Key('connect-button')));
     var off = false;
     for (var i = 0; i < 15 && !off; i++) {
       await tester.pump(const Duration(seconds: 2));

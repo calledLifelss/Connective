@@ -1,12 +1,19 @@
 # IPC contract — Flutter ↔ Go (protocol v1)
 
-Transport: newline-delimited JSON frames over the unix socket at
-`~/.local/share/connective/connectived.sock` (`0600`).
+Transport: newline-delimited JSON frames over a local socket
+(`0600` on Linux):
+- Linux: `~/.local/share/connective/connectived.sock`;
+- Windows: `%LOCALAPPDATA%\Connective\connectived.sock` (Win10 1803+).
+`CONNECTIVE_SOCK` overrides the path and `CONNECTIVE_DATA_DIR`
+overrides the data dir on every OS (tests, portable installs).
 
 Frame: `{"v":"1","id":"<req id>","type":"<method|event>","payload":{...},"error":"..."}`
 
-- Requests carry `id`; responses echo it. Version mismatch and unknown
+- Requests carry `id`; responses echo it (out-of-order arrival is
+  fine — clients match by `id`). Version mismatch and unknown
   methods are errors, never silent.
+- Handlers run concurrently: a slow call (`connection.connect`,
+  `subscriptions.update`) never blocks `ping`/`state.get` behind it.
 - The daemon broadcasts events to all clients; slow clients are dropped
   rather than stalling the backend.
 - The UI never parses shell output; everything in §5 (commands, selection,
