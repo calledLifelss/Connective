@@ -100,8 +100,8 @@ class _LogsPageState extends State<LogsPage> {
     final color = switch (e.level) {
       3 => ConnectiveTheme.danger,
       2 => ConnectiveTheme.warning,
-      0 => ConnectiveTheme.textSecondary,
-      _ => ConnectiveTheme.success,
+      0 => ConnectiveTheme.textMuted,
+      _ => ConnectiveTheme.textSecondary,
     };
     return Padding(
       padding: const EdgeInsets.symmetric(

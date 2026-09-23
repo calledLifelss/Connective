@@ -20,6 +20,7 @@ class SettingsPage extends StatelessWidget {
       builder: (context, _) {
         final s = store.settings;
         return ListView(
+          key: const Key('settings-scroll'),
           padding: const EdgeInsets.all(ConnectiveTheme.pad),
           children: [
             if (store.lastError != null)
@@ -205,7 +206,7 @@ class SettingsPage extends StatelessWidget {
                         16, 0, 16, 12),
                     child: SizedBox(
                       width: double.infinity,
-                      child: FilledButton.tonalIcon(
+                      child: FilledButton.icon(
                         key: const Key(
                             'settings-check-updates'),
                         onPressed: store.updateBusy

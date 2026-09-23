@@ -22,28 +22,49 @@ class SubscriptionHeader extends StatelessWidget {
       builder: (context, _) {
         final expanded = store.isExpandedSub(sub.id);
         final updating = store.updatingSubs[sub.id] ?? false;
+        final count = store.serversOf(sub.id).length;
         return InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(
+              ConnectiveTheme.radiusSmall),
           onTap: () => store.toggleSubscription(sub.id),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 8, vertical: 10),
+            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment:
                         CrossAxisAlignment.start,
                     children: [
-                      Text(sub.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16)),
-                      const SizedBox(height: 4),
+                      Row(
+                        textBaseline: TextBaseline.alphabetic,
+                        crossAxisAlignment:
+                            CrossAxisAlignment.baseline,
+                        children: [
+                          Flexible(
+                            child: Text(sub.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: ConnectiveTheme
+                                        .textPrimary)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '$count servers',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: ConnectiveTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       TrafficBar(traffic: sub.traffic),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 if (updating)
                   const SizedBox(
                       width: 16,
@@ -52,13 +73,13 @@ class SubscriptionHeader extends StatelessWidget {
                           strokeWidth: 2))
                 else ...[
                   IconButton(
-                    icon: const Icon(Icons.refresh, size: 20),
+                    icon: const Icon(Icons.refresh, size: 18),
                     tooltip: 'Update now',
                     onPressed: () =>
                         store.updateSubscriptions(sub.id),
                   ),
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 20),
+                    icon: const Icon(Icons.more_horiz, size: 18),
                     onSelected: (v) =>
                         subscriptionMenu(context, store, sub, v),
                     itemBuilder: (context) => const [
@@ -78,11 +99,15 @@ class SubscriptionHeader extends StatelessWidget {
                   const Tooltip(
                     message: 'Update error — see Logs',
                     child: Icon(Icons.error_outline,
-                        color: Colors.orange, size: 20),
+                        color: ConnectiveTheme.warning,
+                        size: 18),
                   ),
-                Icon(expanded
-                    ? Icons.expand_less
-                    : Icons.chevron_right),
+                Icon(
+                    expanded
+                        ? Icons.expand_less
+                        : Icons.chevron_right,
+                    size: 18,
+                    color: ConnectiveTheme.textMuted),
               ],
             ),
           ),
@@ -92,12 +117,11 @@ class SubscriptionHeader extends StatelessWidget {
   }
 }
 
-/// Traffic quota bar: used/total progress with the label drawn
-/// centered on the bar and the expiry date at the end — the familiar
-/// subscription-remaining glance. The fill shifts accent → amber →
-/// red as the quota runs out. Falls back to the plain text summary
-/// when the subscription reports no quota, and renders nothing when
-/// there is no traffic data at all.
+/// Traffic quota: plain usage label above a thin 5px meter.
+/// Fill is green while healthy, amber past 80%, red past 95%.
+/// Falls back to the plain text summary when the subscription
+/// reports no quota, and renders nothing when there is no
+/// traffic data at all.
 class TrafficBar extends StatelessWidget {
   final TrafficInfo traffic;
 
@@ -106,56 +130,51 @@ class TrafficBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (traffic.hasLimit && traffic.total > 0) {
-      final fraction = traffic.usedFraction;
+      final fraction = traffic.usedFraction.clamp(0.0, 1.0);
       final fill = fraction >= 0.95
           ? ConnectiveTheme.danger
           : fraction >= 0.8
               ? ConnectiveTheme.warning
-              : ConnectiveTheme.accent;
+              : ConnectiveTheme.success;
       final expiry = traffic.expiryLabel();
-      return Row(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: SizedBox(
-              height: 20,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    LinearProgressIndicator(
-                      value: fraction,
-                      backgroundColor: ConnectiveTheme.surface2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(fill),
-                    ),
-                    Center(
-                      child: Text(
-                        traffic.usageLabel(),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  traffic.usageLabel(),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: ConnectiveTheme.textSecondary,
+                    fontFeatures: [
+                      FontFeature.tabularFigures()
+                    ],
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (expiry.isNotEmpty)
+                Text(
+                  expiry,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: ConnectiveTheme.textMuted),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: fraction,
+              backgroundColor: const Color(0xFF2A313B),
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(fill),
+              minHeight: 6,
             ),
           ),
-          if (expiry.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Text(
-              expiry,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(
-                      color: ConnectiveTheme.textSecondary),
-            ),
-          ],
         ],
       );
     }
@@ -163,15 +182,13 @@ class TrafficBar extends StatelessWidget {
     if (summary.isEmpty) return const SizedBox.shrink();
     return Text(
       summary,
-      style: Theme.of(context)
-          .textTheme
-          .bodySmall
-          ?.copyWith(color: Colors.grey),
+      style: const TextStyle(
+          fontSize: 12, color: ConnectiveTheme.textSecondary),
     );
   }
 }
 
-/// Independently collapsible subscription card (§4, §15): header with
+/// Independently collapsible subscription card: header with
 /// name + traffic/expiry always visible; servers hide on collapse;
 /// per-subscription update + menu. Used by the Servers and
 /// Subscriptions management pages; the Dashboard uses [SubscriptionHeader]
@@ -193,7 +210,7 @@ class SubscriptionCard extends StatelessWidget {
         return Card(
           child: Padding(
             padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: Column(
               children: [
                 SubscriptionHeader(store: store, sub: sub),
@@ -203,15 +220,20 @@ class SubscriptionCard extends StatelessWidget {
                   child: expanded
                       ? Column(
                           children: [
+                            const Divider(height: 1),
+                            const SizedBox(height: 6),
                             for (final s in children)
                               Padding(
                                 padding: const EdgeInsets.only(
-                                    left: 8, right: 8),
+                                    left: 8,
+                                    right: 8,
+                                    bottom: 2),
                                 child: ServerRow(
                                     key: ValueKey(s.id),
                                     store: store,
                                     server: s),
                               ),
+                            const SizedBox(height: 4),
                           ],
                         )
                       : const SizedBox.shrink(),
@@ -250,6 +272,10 @@ Future<void> subscriptionMenu(
                     child: const Text('Cancel')),
                 FilledButton(
                     onPressed: () => Navigator.pop(c, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: ConnectiveTheme.danger,
+                      foregroundColor: Colors.white,
+                    ),
                     child: const Text('Delete')),
               ],
             ),
@@ -260,7 +286,7 @@ Future<void> subscriptionMenu(
   }
 }
 
-/// Add/edit subscription dialog (§7).
+/// Add/edit subscription dialog.
 Future<void> showSubscriptionDialog(
     BuildContext context, AppStore store, Subscription? existing) async {
   final isNew = existing == null;

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/connective_theme.dart';
 
-/// Status badge: colored dot + label (§15 status badges).
+/// Compact status tag: small dot + uppercase label on a flat surface.
+/// Muted by default — color is reserved for the dot only.
 class StatusBadge extends StatelessWidget {
   final String label;
   final Color color;
@@ -12,29 +13,38 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: ConnectiveTheme.surfaceElevated,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: ConnectiveTheme.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            width: 6,
+            height: 6,
+            decoration:
+                BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontSize: 12)),
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: ConnectiveTheme.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Section header with optional trailing action.
+/// Section header: small uppercase label, generous spacing.
 class SectionHeader extends StatelessWidget {
   final String title;
   final Widget? action;
@@ -44,15 +54,16 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.only(top: 12, bottom: 6),
       child: Row(
         children: [
           Expanded(
-            child: Text(title,
+            child: Text(title.toUpperCase(),
                 style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: ConnectiveTheme.textSecondary)),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: ConnectiveTheme.textMuted)),
           ),
           if (action != null) action!,
         ],
@@ -61,7 +72,7 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// Friendly error banner (§19), dismissible.
+/// Dismissible message banner with a flat surface and thin border.
 class ErrorBanner extends StatelessWidget {
   final String message;
   final VoidCallback onDismiss;
@@ -72,17 +83,29 @@ class ErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: ConnectiveTheme.danger.withValues(alpha: 0.12),
+      color: ConnectiveTheme.surface,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 12, vertical: 10),
         child: Row(
           children: [
-            const Icon(Icons.error_outline,
-                color: ConnectiveTheme.danger, size: 20),
+            Container(
+              width: 3,
+              height: 32,
+              decoration: BoxDecoration(
+                color: ConnectiveTheme.danger,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: Text(message, style: const TextStyle(fontSize: 13))),
+            const Icon(Icons.error_outline,
+                color: ConnectiveTheme.danger, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(message,
+                    style: const TextStyle(fontSize: 13))),
             IconButton(
-              icon: const Icon(Icons.close, size: 18),
+              icon: const Icon(Icons.close, size: 16),
               onPressed: onDismiss,
               tooltip: 'Dismiss',
             ),
@@ -119,17 +142,22 @@ class LoadingRow extends StatelessWidget {
   }
 }
 
-/// Small elegant sparkline for traffic (§11).
+/// Slim monitoring sparkline: thin stroke, faint fill, no neon.
 class Sparkline extends StatelessWidget {
   final List<double> values;
   final Color color;
+  final double height;
 
-  const Sparkline({super.key, required this.values, required this.color});
+  const Sparkline(
+      {super.key,
+      required this.values,
+      required this.color,
+      this.height = 32});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 40,
+      height: height,
       width: double.infinity,
       child: CustomPaint(painter: _SparkPainter(values, color)),
     );
@@ -144,7 +172,17 @@ class _SparkPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (values.length < 2) return;
+    if (values.length < 2) {
+      // Empty state: faint baseline so the panel doesn't look broken.
+      canvas.drawLine(
+        Offset(0, size.height - 1),
+        Offset(size.width, size.height - 1),
+        Paint()
+          ..color = const Color(0xFF2D333D)
+          ..strokeWidth = 1,
+      );
+      return;
+    }
     final max =
         values.reduce((a, b) => a > b ? a : b).clamp(1.0, double.infinity);
     final dx = size.width / (values.length - 1);
@@ -165,14 +203,16 @@ class _SparkPainter extends CustomPainter {
     canvas.drawPath(
         fill,
         Paint()
-          ..color = color.withValues(alpha: 0.15)
+          ..color = color.withValues(alpha: 0.08)
           ..style = PaintingStyle.fill);
     canvas.drawPath(
         path,
         Paint()
-          ..color = color
+          ..color = color.withValues(alpha: 0.9)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6);
+          ..strokeWidth = 1.3
+          ..strokeJoin = StrokeJoin.round
+          ..strokeCap = StrokeCap.round);
   }
 
   @override

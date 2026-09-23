@@ -59,10 +59,17 @@ void main() {
     // Initial: disconnected dashboard (header + button share the label).
     expect(find.text('Disconnected'), findsWidgets);
 
-    // Sidebar navigates to Servers.
-    await tester.tap(find.text('Servers'));
+    // Everything lives on the dashboard: AUTO mode, TUN switch,
+    // server toolbar, and the empty state.
+    expect(find.textContaining('AUTO'), findsWidgets);
+    expect(find.byKey(const Key('dash-tun-toggle')), findsOneWidget);
+    expect(find.byKey(const Key('dash-update-all')), findsOneWidget);
+    expect(find.byKey(const Key('dash-add-server')), findsOneWidget);
+    expect(find.byKey(const Key('dash-import-server')), findsOneWidget);
+    // Empty state sits below the fold in the test viewport: scroll first.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, -600));
     await settle(tester);
-    expect(find.text('AUTO'), findsOneWidget);
     expect(find.textContaining('No servers yet'), findsOneWidget);
 
     // Seed a subscription (real backend, real async zone).
@@ -73,6 +80,9 @@ void main() {
     await settle(tester);
 
     // Subscription card appears with servers; collapse hides them.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, -400));
+    await settle(tester);
     expect(find.text('Lab'), findsOneWidget);
     expect(find.text('T1'), findsOneWidget);
     await tester.tap(find.text('Lab'));
@@ -83,12 +93,17 @@ void main() {
     expect(find.text('T1'), findsOneWidget);
 
     // Server row expands inline to technical details.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, -250));
+    await settle(tester);
     await tester.tap(find.text('T1'));
     await settle(tester);
     expect(find.text('Address'), findsWidgets);
 
-    // Back to dashboard, connect through the real button.
-    await tester.tap(find.text('Dashboard'));
+    // Connect through the real button (already on the dashboard).
+    // Scroll back to the top: the expanded row pushed it off-screen.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, 3000));
     await settle(tester);
     await tester.tap(find.byKey(const Key('connect-button')));
     // The daemon needs real seconds to start the core: poll with
@@ -133,7 +148,8 @@ void main() {
     await settle(tester);
     expect(find.text('AUTO SERVER'), findsOneWidget);
     // ADVANCED section needs scrolling on small test viewport.
-    await tester.drag(find.byType(ListView), const Offset(0, -2500));
+    await tester.drag(
+        find.byKey(const Key('settings-scroll')), const Offset(0, -2500));
     await settle(tester);
     expect(find.text('Clash API port'), findsOneWidget);
     await flushTimers(tester);
@@ -181,8 +197,6 @@ void main() {
     final sw = Stopwatch()..start();
     await tester.pumpWidget(ConnectiveApp(store: store));
     await settle(tester);
-    await tester.tap(find.text('Servers'));
-    await settle(tester);
     sw.stop();
     // ignore: avoid_print
     print('LARGE render+settle: ${sw.elapsedMilliseconds}ms');
@@ -194,8 +208,15 @@ void main() {
     await tester.enterText(
         find.widgetWithText(SearchBar, 'Search servers…'), '');
     await settle(tester);
-    // Scroll deep into the list without jank failures.
-    await tester.drag(find.byType(ListView).first, const Offset(0, -3000));
+    // Expand the big subscription inline, then scroll deep
+    // into the list without jank failures.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, -600));
+    await settle(tester);
+    await tester.tap(find.text('Big'));
+    await settle(tester);
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, -3000));
     await settle(tester);
     await flushTimers(tester);
   }, timeout: const Timeout(Duration(minutes: 3)));

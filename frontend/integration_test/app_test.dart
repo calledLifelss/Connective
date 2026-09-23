@@ -156,15 +156,13 @@ void main() {
         app.ConnectiveApp(store: store, launcher: null));
     await settle(tester);
 
-    // Servers page: empty state.
-    await tester.tap(find.text('Servers'));
-    await settle(tester);
+    // Dashboard: empty state with the consolidated toolbar.
     expect(find.textContaining('No servers yet'), findsOneWidget);
+    expect(find.byKey(const Key('dash-tun-toggle')), findsOneWidget);
+    expect(find.byKey(const Key('dash-update-all')), findsOneWidget);
 
     // Add subscription through the REAL dialog.
-    await tester.tap(find.text('Subscriptions'));
-    await settle(tester);
-    await tester.tap(find.text('Add'));
+    await tester.tap(find.byKey(const Key('dash-add-subscription')));
     await settle(tester);
     await tester.enterText(
         find.widgetWithText(TextField, 'Name'), 'DriveTest');
@@ -172,6 +170,11 @@ void main() {
         TextField, 'Subscription URL (https://…)'),
         'http://127.0.0.1:$subPort/sub');
     await tester.tap(find.text('Save'));
+    await settle(tester);
+
+    // The new subscription lands below the fold: bring it into view.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, -350));
     await settle(tester);
 
     // Update now through the REAL update button.

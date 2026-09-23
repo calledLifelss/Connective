@@ -4,7 +4,7 @@ import '../state/app_store.dart';
 import '../theme/connective_theme.dart';
 import 'update_dialog.dart';
 
-/// Non-intrusive Dashboard banner (§11, §35): visible only when an
+/// Non-intrusive Dashboard banner: visible only when an
 /// update is actually available. Dismissing hides it until a NEWER
 /// version appears; checks continue in the background.
 class UpdateBanner extends StatelessWidget {
@@ -27,15 +27,24 @@ class UpdateBanner extends StatelessWidget {
           child: Card(
             key: const Key('update-banner'),
             margin: EdgeInsets.zero,
-            color:
-                ConnectiveTheme.accentSoft.withValues(alpha: 0.25),
           child: Padding(
             padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 10),
+                horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                const Icon(Icons.auto_awesome,
-                    size: 20, color: ConnectiveTheme.accent),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: ConnectiveTheme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: ConnectiveTheme.border),
+                  ),
+                  child: const Icon(Icons.system_update,
+                      size: 17,
+                      color: ConnectiveTheme.textSecondary),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -44,7 +53,8 @@ class UpdateBanner extends StatelessWidget {
                       Text(
                         'Connective ${info.version} is available',
                         style: const TextStyle(
-                            fontWeight: FontWeight.w700),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13),
                       ),
                       Text(
                         info.sizeLabel,
@@ -65,7 +75,7 @@ class UpdateBanner extends StatelessWidget {
                   key: const Key('update-banner-now'),
                   onPressed: () =>
                       showUpdateDialog(context, store),
-                  child: const Text('Update now'),
+                  child: const Text('Update'),
                 ),
               ],
             ),
@@ -79,7 +89,7 @@ class UpdateBanner extends StatelessWidget {
 
 
 
-/// Subtle update dot for navigation areas (§35).
+/// Subtle update dot for navigation areas.
 class UpdateDot extends StatelessWidget {
   final AppStore store;
 
@@ -94,10 +104,10 @@ class UpdateDot extends StatelessWidget {
           return const SizedBox.shrink();
         }
         return Container(
-          width: 8,
-          height: 8,
+          width: 7,
+          height: 7,
           decoration: const BoxDecoration(
-              color: ConnectiveTheme.accent,
+              color: ConnectiveTheme.success,
               shape: BoxShape.circle),
         );
       },

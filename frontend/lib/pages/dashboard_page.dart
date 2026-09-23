@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../components/connect_button.dart';
+import '../components/server_dialogs.dart';
 import '../components/server_row.dart';
 import '../components/subscription_card.dart';
 import '../components/update_banner.dart';
@@ -10,14 +11,14 @@ import '../theme/connective_theme.dart';
 import '../utils/country.dart';
 import '../widgets/common.dart';
 
-/// Home: the everyday connection experience (§1–§13, §21–§23).
+/// Home: the everyday connection experience.
 ///
-/// One vertical scroll: compact connection section → Add Subscription →
-/// search → subscriptions → servers. A persistent compact connection bar
-/// fades in once the expanded section scrolls away, so the Connect
-/// action is never lost. Pressing Connect uses the manual selection (or
-/// AUTO) through the real backend, then smoothly returns attention to
-/// the connection section.
+/// One vertical scroll: status panel → Add Subscription → search →
+/// subscriptions → servers. A persistent compact connection bar
+/// fades in once the status panel scrolls away, so the Connect
+/// action is never lost. Pressing Connect uses the manual selection
+/// (or AUTO) through the real backend, then smoothly returns
+/// attention to the status panel.
 class DashboardPage extends StatefulWidget {
   final AppStore store;
 
@@ -57,7 +58,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   /// Connect/disconnect through the real backend, then smoothly return
-  /// attention to the connection section (§11).
+  /// attention to the status panel.
   Future<void> _connect() async {
     await widget.store.toggleConnection();
     if (!mounted || !_scroll.hasClients) return;
@@ -77,19 +78,36 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  /// Content column: capped width, centered in wide windows so the
+  /// page feels composed instead of stretched edge to edge.
+  static const double _contentMax = 720;
+
+  EdgeInsets _hPad(BuildContext context) {
+    final total = MediaQuery.sizeOf(context).width;
+    const rail = 200.0; // sidebar width in main.dart
+    final avail = total - rail - _contentMax;
+    if (avail <= 0) {
+      return const EdgeInsets.symmetric(
+          horizontal: ConnectiveTheme.pad);
+    }
+    final side = ConnectiveTheme.pad + avail / 2;
+    return EdgeInsets.symmetric(horizontal: side);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.store,
       builder: (context, _) {
         final store = widget.store;
+        final hPad = _hPad(context);
         _pushHistory(store);
         return Column(
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOut,
-              height: _showCompact ? 60 : 0,
+              height: _showCompact ? 56 : 0,
               child: _showCompact
                   ? _CompactBar(
                       key: const Key('dash-compact-bar'),
@@ -105,12 +123,11 @@ class _DashboardPageState extends State<DashboardPage> {
                 controller: _scroll,
                 slivers: [
                   const SliverToBoxAdapter(
-                      child: SizedBox(height: 12)),
-                  ..._banners(store),
+                      child: SizedBox(height: 16)),
+                  ..._banners(store, hPad),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: ConnectiveTheme.pad),
+                      padding: hPad,
                       child: _ConnectionCard(
                           store: store,
                           onConnect: _connect,
@@ -119,20 +136,25 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                   SliverToBoxAdapter(
+                    child: Padding(
+                      padding: hPad.copyWith(top: 12),
+                      child: _TunCard(store: store),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
                     child: UpdateBanner(store: store),
                   ),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                          ConnectiveTheme.pad, 12, ConnectiveTheme.pad, 0),
-                      child: _AddAndSearch(
+                      padding: hPad.copyWith(top: 12),
+                      child: _ServerToolbar(
                         store: store,
                         onQuery: (q) =>
                             setState(() => _query = q),
                       ),
                     ),
                   ),
-                  ..._body(store),
+                  ..._body(store, hPad),
                   const SliverToBoxAdapter(
                       child: SizedBox(height: 24)),
                 ],
@@ -144,30 +166,29 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  List<Widget> _banners(AppStore store) {
+  List<Widget> _banners(AppStore store, EdgeInsets hPad) {
     final out = <Widget>[];
     SliverToBoxAdapter wrap(Widget c) => SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                ConnectiveTheme.pad, 0, ConnectiveTheme.pad, 12),
+            padding: hPad.copyWith(bottom: 12),
             child: c,
           ),
         );
     if (store.foreignTun.isNotEmpty &&
         !ConnectionStates.isConnected(store.connectionState)) {
       out.add(wrap(Card(
-        color: ConnectiveTheme.warning.withValues(alpha: 0.12),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 12, vertical: 10),
           child: Row(
             children: [
               const Icon(Icons.warning_amber,
-                  color: ConnectiveTheme.warning, size: 20),
+                  color: ConnectiveTheme.warning, size: 18),
               const SizedBox(width: 10),
               Expanded(
                   child: Text(
                       'Another VPN tunnel (${store.foreignTun.join(', ')}) is active. Connecting may conflict — the backend will fail safely rather than corrupt routes.',
-                      style: const TextStyle(fontSize: 13))),
+                      style: const TextStyle(fontSize: 13, height: 1.4))),
             ],
           ),
         ),
@@ -175,13 +196,13 @@ class _DashboardPageState extends State<DashboardPage> {
     }
     if (!store.backendAlive) {
       out.add(wrap(Card(
-        color: ConnectiveTheme.warning.withValues(alpha: 0.12),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 12, vertical: 10),
           child: Row(
             children: [
               const Icon(Icons.cloud_off,
-                  color: ConnectiveTheme.warning, size: 20),
+                  color: ConnectiveTheme.warning, size: 18),
               const SizedBox(width: 10),
               const Expanded(
                   child: Text(
@@ -206,9 +227,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   /// Subscriptions + servers (or flat search results), lazily built.
-  List<Widget> _body(AppStore store) {
-    const pad =
-        EdgeInsets.symmetric(horizontal: ConnectiveTheme.pad);
+  List<Widget> _body(AppStore store, EdgeInsets hPad) {
+    final pad = hPad;
     final q = _query.trim();
     if (q.isNotEmpty) {
       final results = store.search(q);
@@ -218,14 +238,18 @@ class _DashboardPageState extends State<DashboardPage> {
             padding: pad.copyWith(top: 12),
             child: Text('${results.length} result${results.length == 1 ? '' : 's'} for "$q"',
                 style: const TextStyle(
-                    color: ConnectiveTheme.textSecondary, fontSize: 13)),
+                    color: ConnectiveTheme.textSecondary, fontSize: 12)),
           ),
         ),
         if (results.isEmpty)
           const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(top: 40),
-              child: Center(child: Text('No servers match.')),
+            child: SizedBox(
+              height: 160,
+              child: Center(
+                  child: Text('No servers match.',
+                      style: TextStyle(
+                          color:
+                              ConnectiveTheme.textSecondary))),
             ),
           )
         else
@@ -276,7 +300,7 @@ class _DashboardPageState extends State<DashboardPage> {
         child: Padding(
           padding: pad.copyWith(top: 12),
           child:
-              const SectionHeader(title: 'LOCAL SERVERS'),
+              const SectionHeader(title: 'Local servers'),
         ),
       ));
       slivers.add(SliverPadding(
@@ -294,12 +318,14 @@ class _DashboardPageState extends State<DashboardPage> {
     }
     if (store.subscriptions.isEmpty && locals.isEmpty) {
       slivers.add(const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.only(top: 32),
+        child: SizedBox(
+          height: 160,
           child: Center(
               child: Text(
                   'No servers yet. Add a subscription to load servers.',
-                  textAlign: TextAlign.center)),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: ConnectiveTheme.textSecondary))),
         ),
       ));
     }
@@ -314,8 +340,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-/// Compact persistent connection bar (§12): pinned above the dashboard
-/// scroll, visible once the expanded section scrolls away. Same backend
+/// Compact persistent connection bar: pinned above the dashboard
+/// scroll, visible once the status panel scrolls away. Same backend
 /// action, same state — never a second competing control.
 class _CompactBar extends StatelessWidget {
   final AppStore store;
@@ -349,11 +375,11 @@ class _CompactBar extends StatelessWidget {
             border: Border(
                 bottom: BorderSide(color: ConnectiveTheme.border)),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              _StateDot(state: state, size: 10),
-              const SizedBox(width: 8),
+              _StateDot(state: state, size: 8),
+              const SizedBox(width: 10),
               if (flagCode != null || flagServer != null)
                 CountryFlag(
                     code: flagCode, width: 20, height: 15),
@@ -366,7 +392,7 @@ class _CompactBar extends StatelessWidget {
                   children: [
                     Text(ConnectionStates.label(state),
                         style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14)),
+                            fontWeight: FontWeight.w600, fontSize: 13)),
                     Text(_targetLine(store),
                         style: const TextStyle(
                             color: ConnectiveTheme.textSecondary,
@@ -376,33 +402,30 @@ class _CompactBar extends StatelessWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.arrow_upward, size: 18),
-                tooltip: 'Back to connection',
+                icon: const Icon(Icons.arrow_upward, size: 16),
+                tooltip: 'Back to status',
                 onPressed: onTop,
               ),
               const SizedBox(width: 4),
               SizedBox(
-                height: 36,
-                child: FilledButton(
-                  key: const Key('dash-compact-connect'),
-                  onPressed: busy ? null : onConnect,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: connected
-                        ? ConnectiveTheme.success
-                            .withValues(alpha: 0.2)
-                        : ConnectiveTheme.accent,
-                    foregroundColor: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                  child: busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2))
-                      : Text(connected ? 'Disconnect' : 'Connect'),
-                ),
+                height: 34,
+                child: connected
+                    ? OutlinedButton(
+                        key: const Key('dash-compact-connect'),
+                        onPressed: busy ? null : onConnect,
+                        child: const Text('Disconnect'),
+                      )
+                    : FilledButton(
+                        key: const Key('dash-compact-connect'),
+                        onPressed: busy ? null : onConnect,
+                        child: busy
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2))
+                            : const Text('Connect'),
+                      ),
               ),
             ],
           ),
@@ -412,9 +435,8 @@ class _CompactBar extends StatelessWidget {
   }
 }
 
-/// Expanded connection section (§3): visually important but compact —
-/// state, AUTO/selected, connected-vs-selected, real latency/health,
-/// one Connect/Disconnect control, secondary slim stats.
+/// Status panel: state, one server summary, connect control,
+/// live stats. Flat surfaces, typography-led hierarchy — no hero art.
 class _ConnectionCard extends StatelessWidget {
   final AppStore store;
   final Future<void> Function() onConnect;
@@ -431,71 +453,53 @@ class _ConnectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = store.connectionState;
     final connected = ConnectionStates.isConnected(state);
-    final active = store.activeServer;
     final selected = store.selectedServer;
-    final activeCode = active == null
-        ? null
-        : countryCodeOf(
-            country: active.country, displayName: active.displayName);
     return Card(
       key: const Key('dash-connection-expanded'),
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                _StateDot(state: state, size: 12),
-                const SizedBox(width: 10),
+                _StateDot(state: state, size: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     ConnectionStates.label(state),
                     style: const TextStyle(
-                        fontSize: 22, fontWeight: FontWeight.w800),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: ConnectiveTheme.textPrimary),
                   ),
                 ),
-                StatusBadge(
-                  label: connected
+                Text(
+                  connected
                       ? (state == ConnectionStates.degraded
-                          ? 'Degraded'
-                          : 'Protected')
-                      : 'Unprotected',
-                  color: connected
-                      ? (state == ConnectionStates.degraded
-                          ? ConnectiveTheme.warning
-                          : ConnectiveTheme.success)
-                      : ConnectiveTheme.textSecondary,
+                          ? 'DEGRADED'
+                          : 'PROTECTED')
+                      : 'NOT PROTECTED',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: connected
+                        ? (state == ConnectionStates.degraded
+                            ? ConnectiveTheme.warning
+                            : ConnectiveTheme.success)
+                        : ConnectiveTheme.textMuted,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            _ModeLine(store: store),
-            if (connected && active != null) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  CountryFlag(code: activeCode),
-                  StatusBadge(
-                      label: active.compactInfo,
-                      color: ConnectiveTheme.accent),
-                  StatusBadge(
-                      label: active.latencyLabel,
-                      color: ConnectiveTheme.textSecondary),
-                  StatusBadge(
-                      label: active.health,
-                      color: _healthColor(active.health)),
-                ],
-              ),
-            ],
+            const SizedBox(height: 10),
+            _ServerContext(store: store),
             if (connected &&
                 selected != null &&
                 selected.id != store.activeServerId) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 'Selected: ${selected.displayName} — press Connect to switch.',
                 style: const TextStyle(
@@ -504,6 +508,8 @@ class _ConnectionCard extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             ConnectButton(store: store, onPressed: onConnect),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
             const SizedBox(height: 10),
             _CompactStats(
                 store: store,
@@ -514,73 +520,184 @@ class _ConnectionCard extends StatelessWidget {
       ),
     );
   }
-
-  Color _healthColor(String h) {
-    switch (h) {
-      case 'healthy':
-        return ConnectiveTheme.success;
-      case 'degraded':
-        return ConnectiveTheme.warning;
-      case 'unhealthy':
-        return ConnectiveTheme.danger;
-      default:
-        return ConnectiveTheme.textSecondary;
-    }
-  }
 }
 
-/// AUTO vs SELECTED visual language (§19): unambiguous, one line.
-class _ModeLine extends StatelessWidget {
+/// The single server summary: flag + name + protocol/latency on one
+/// block, health at the trailing edge, and the AUTO/manual mode as a
+/// quiet caption underneath — never the same facts twice.
+class _ServerContext extends StatelessWidget {
   final AppStore store;
 
-  const _ModeLine({required this.store});
+  const _ServerContext({required this.store});
 
   @override
   Widget build(BuildContext context) {
-    if (store.autoMode) {
+    final connected =
+        ConnectionStates.isConnected(store.connectionState);
+    final server =
+        connected ? store.activeServer : store.selectedServer;
+    if (server == null && store.autoMode) {
       return const Row(
         children: [
-          Icon(Icons.auto_awesome,
-              size: 16, color: ConnectiveTheme.accent),
+          Icon(Icons.autorenew,
+              size: 15, color: ConnectiveTheme.textSecondary),
           SizedBox(width: 6),
           Expanded(
-            child: Text('AUTO — Connective picks the best server',
+            child: Text('AUTO — best server is picked automatically',
                 style: TextStyle(
-                    color: ConnectiveTheme.textSecondary)),
+                    color: ConnectiveTheme.textSecondary,
+                    fontSize: 13)),
           ),
         ],
       );
     }
-    final sel = store.selectedServer;
-    final code = sel == null
-        ? null
-        : countryCodeOf(
-            country: sel.country, displayName: sel.displayName);
-    return Row(
-      children: [
-        const StatusDot(color: ConnectiveTheme.accent, label: 'SELECTED'),
-        const SizedBox(width: 8),
-        if (sel != null) CountryFlag(code: code, width: 18, height: 13),
-        if (sel != null) const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            sel == null
-                ? 'Manual — selection unavailable'
-                : '${sel.displayName} · ${sel.latencyLabel}',
-            style: const TextStyle(fontWeight: FontWeight.w600),
-            overflow: TextOverflow.ellipsis,
+    if (server == null) {
+      return Row(
+        children: [
+          const Expanded(
+            child: Text('Manual — selection unavailable',
+                style: TextStyle(
+                    color: ConnectiveTheme.textSecondary,
+                    fontSize: 13)),
           ),
+          TextButton(
+            onPressed: () => store.selectServer('auto'),
+            child: const Text('Use Auto'),
+          ),
+        ],
+      );
+    }
+    final code = countryCodeOf(
+        country: server.country,
+        displayName: server.displayName);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            CountryFlag(code: code),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    server.displayName,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: ConnectiveTheme.textPrimary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${server.compactInfo}  ·  ${server.latencyLabel}',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: ConnectiveTheme.textSecondary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _HealthDot(health: server.health),
+          ],
         ),
-        TextButton(
-          onPressed: () => store.selectServer('auto'),
-          child: const Text('Use Auto'),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            if (store.autoMode) ...[
+              const Icon(Icons.autorenew,
+                  size: 14,
+                  color: ConnectiveTheme.textMuted),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text('via AUTO selection',
+                    style: TextStyle(
+                        color: ConnectiveTheme.textMuted,
+                        fontSize: 12)),
+              ),
+            ] else ...[
+              Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                      color: ConnectiveTheme.success,
+                      shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              const Text('SELECTED',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                      color: ConnectiveTheme.success)),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text('Manual selection',
+                    style: TextStyle(
+                        color: ConnectiveTheme.textMuted,
+                        fontSize: 12),
+                    overflow: TextOverflow.ellipsis),
+              ),
+              TextButton(
+                onPressed: () => store.selectServer('auto'),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize:
+                      MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Use Auto'),
+              ),
+            ],
+          ],
         ),
       ],
     );
   }
 }
 
-/// Secondary traffic info (§4): numbers first, one slim live graph.
+class _HealthDot extends StatelessWidget {
+  final String health;
+  const _HealthDot({required this.health});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color c;
+    switch (health) {
+      case 'healthy':
+        c = ConnectiveTheme.success;
+        break;
+      case 'degraded':
+        c = ConnectiveTheme.warning;
+        break;
+      case 'unhealthy':
+        c = ConnectiveTheme.danger;
+        break;
+      default:
+        c = ConnectiveTheme.textMuted;
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+            width: 7,
+            height: 7,
+            decoration:
+                BoxDecoration(color: c, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(health,
+            style: const TextStyle(
+                fontSize: 12,
+                color: ConnectiveTheme.textSecondary)),
+      ],
+    );
+  }
+}
+
+/// Secondary traffic info: numbers first, one slim live graph.
 class _CompactStats extends StatelessWidget {
   final AppStore store;
   final List<double> downHist;
@@ -598,18 +715,20 @@ class _CompactStats extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(
-                          color:
-                              ConnectiveTheme.textSecondary)),
-              const SizedBox(height: 1),
+              Text(label.toUpperCase(),
+                  style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                      color: ConnectiveTheme.textMuted)),
+              const SizedBox(height: 2),
               Text(value,
                   style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700)),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: [
+                        FontFeature.tabularFigures()
+                      ])),
             ],
           ),
         );
@@ -625,51 +744,206 @@ class _CompactStats extends StatelessWidget {
             stat('Time', ConnectiveTheme.duration(s.durationMs)),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         SizedBox(
-          height: 28,
+          height: 32,
           child: Stack(
             children: [
               Sparkline(
                   values: downHist,
                   color: ConnectiveTheme.success),
               Sparkline(
-                  values: upHist, color: ConnectiveTheme.accent),
+                  values: upHist,
+                  color: ConnectiveTheme.info),
             ],
           ),
+        ),
+        const SizedBox(height: 4),
+        const Row(
+          children: [
+            _LegendDot(
+                color: ConnectiveTheme.success, label: 'Down'),
+            SizedBox(width: 12),
+            _LegendDot(
+                color: ConnectiveTheme.info, label: 'Up'),
+          ],
         ),
       ],
     );
   }
 }
 
-/// Add Subscription entry point (§5) + server search (§15).
-class _AddAndSearch extends StatelessWidget {
-  final AppStore store;
-  final ValueChanged<String> onQuery;
-
-  const _AddAndSearch({required this.store, required this.onQuery});
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonalIcon(
-            key: const Key('dash-add-subscription'),
-            onPressed: () =>
-                showSubscriptionDialog(context, store, null),
-            icon: const Icon(Icons.add),
-            label: const Text('Add Subscription'),
-          ),
+        Container(
+            width: 6,
+            height: 6,
+            decoration:
+                BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 5),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 11,
+                color: ConnectiveTheme.textMuted)),
+      ],
+    );
+  }
+}
+
+/// Tunnel capture switch on the dashboard: the most common routing
+/// control, without a page hop. Same backend setting as
+/// Routing → TUN; applies on the next connect.
+class _TunCard extends StatelessWidget {
+  final AppStore store;
+
+  const _TunCard({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    final tun = store.settings.tunEnabled;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: ConnectiveTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                    color: ConnectiveTheme.border),
+              ),
+              child: Icon(Icons.vpn_lock_outlined,
+                  size: 17,
+                  color: tun
+                      ? ConnectiveTheme.success
+                      : ConnectiveTheme.textMuted),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('TUN mode',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13)),
+                  Text(
+                    tun
+                        ? 'On — captures device traffic'
+                        : 'Off',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color:
+                            ConnectiveTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              key: const Key('dash-tun-toggle'),
+              value: tun,
+              onChanged: (v) => store.updateSettings(
+                  store.settings.copyWith(tunEnabled: v)),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
+      ),
+    );
+  }
+}
+
+/// Server management toolbar: section label + Update all, compact
+/// search, and the entry points (subscription / manual server /
+/// share-link import) absorbed from the removed Servers and
+/// Subscriptions tabs.
+class _ServerToolbar extends StatelessWidget {
+  final AppStore store;
+  final ValueChanged<String> onQuery;
+
+  const _ServerToolbar({required this.store, required this.onQuery});
+
+  @override
+  Widget build(BuildContext context) {
+    final updating =
+        store.updatingSubs.values.any((v) => v);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('SERVERS',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                      color: ConnectiveTheme.textMuted)),
+            ),
+            TextButton.icon(
+              key: const Key('dash-update-all'),
+              onPressed: store.subscriptions.isEmpty || updating
+                  ? null
+                  : () => store.updateSubscriptions(),
+              icon: updating
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2))
+                  : const Icon(Icons.sync, size: 15),
+              label: const Text('Update all'),
+            ),
+          ],
+        ),
         SearchBar(
           key: const Key('dash-search'),
           hintText: 'Search servers…',
-          leading: const Icon(Icons.search),
+          leading: const Icon(Icons.search, size: 18),
           onChanged: onQuery,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                key: const Key('dash-add-subscription'),
+                onPressed: () => showSubscriptionDialog(
+                    context, store, null),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add Subscription',
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              key: const Key('dash-add-server'),
+              onPressed: () =>
+                  showServerEditor(context, store, null),
+              icon: const Icon(Icons.dns_outlined, size: 16),
+              label: const Text('Server'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              key: const Key('dash-import-server'),
+              onPressed: () =>
+                  showImportDialog(context, store),
+              icon: const Icon(Icons.link, size: 16),
+              label: const Text('Import'),
+            ),
+          ],
         ),
       ],
     );
@@ -691,7 +965,7 @@ String _targetLine(AppStore store) {
     if (s != null) return 'Selected: ${s.displayName}';
     return 'Manual';
   }
-  return 'AUTO';
+  return 'Auto';
 }
 
 class _StateDot extends StatelessWidget {
@@ -708,11 +982,11 @@ class _StateDot extends StatelessWidget {
           ? ConnectiveTheme.warning
           : ConnectiveTheme.success;
     } else if (ConnectionStates.isBusy(state)) {
-      c = ConnectiveTheme.accent;
+      c = ConnectiveTheme.info;
     } else if (state == ConnectionStates.error) {
       c = ConnectiveTheme.danger;
     } else {
-      c = ConnectiveTheme.textSecondary;
+      c = ConnectiveTheme.textMuted;
     }
     return Container(
       width: size,

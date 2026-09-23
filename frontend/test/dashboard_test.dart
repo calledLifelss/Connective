@@ -104,7 +104,8 @@ void main() {
     expect(
         find.byKey(const Key('dash-add-subscription')),
         findsOneWidget);
-    // Empty state guides the user.
+    // Empty state guides the user (below the fold: scroll first).
+    await see(tester, find.textContaining('No servers yet'));
     expect(find.textContaining('No servers yet'), findsOneWidget);
 
     await seedLab(tester);
@@ -267,7 +268,7 @@ void main() {
     await flushTimers(tester);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  testWidgets('dashboard search filters, management pages intact',
+  testWidgets('dashboard search filters, management consolidated',
       (tester) async {
     await tester.pumpWidget(ConnectiveApp(store: store));
     await settle(tester);
@@ -286,17 +287,32 @@ void main() {
     await see(tester, find.text('T2'));
     expect(find.text('T2'), findsOneWidget);
 
-    // Servers management page still works.
-    await tester.tap(find.text('Servers'));
-    await settle(tester);
-    expect(find.text('AUTO'), findsOneWidget);
+    // Everything the old tabs had lives on the dashboard now:
+    // Update all, Add subscription/server/import, AUTO + TUN.
     expect(find.text('Lab'), findsOneWidget);
+    // Back to the top first: deep scrolls unbuild off-screen slivers.
+    await tester.drag(
+        find.byKey(const Key('dash-scroll')), const Offset(0, 3000));
+    await settle(tester);
+    expect(find.byKey(const Key('dash-update-all')), findsOneWidget);
+    expect(
+        find.byKey(const Key('dash-add-subscription')), findsOneWidget);
+    expect(find.byKey(const Key('dash-add-server')), findsOneWidget);
+    expect(
+        find.byKey(const Key('dash-import-server')), findsOneWidget);
+    expect(find.byKey(const Key('dash-tun-toggle')), findsOneWidget);
+    expect(find.textContaining('AUTO'), findsWidgets);
 
-    // Subscriptions management page still works.
-    await tester.tap(find.text('Subscriptions'));
-    await settle(tester);
-    expect(find.text('Update all'), findsOneWidget);
-    expect(find.text('Lab'), findsOneWidget);
+    // The TUN switch on the dashboard drives the real backend setting.
+    final tun = store.settings.tunEnabled;
+    await see(tester, find.byKey(const Key('dash-tun-toggle')));
+    await tester.tap(find.byKey(const Key('dash-tun-toggle')));
+    for (var i = 0; i < 10 && store.settings.tunEnabled == tun; i++) {
+      await tester.runAsync(
+          () => Future.delayed(const Duration(milliseconds: 500)));
+      await settle(tester);
+    }
+    expect(store.settings.tunEnabled, isNot(tun));
     await flushTimers(tester);
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

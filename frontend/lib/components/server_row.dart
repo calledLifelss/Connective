@@ -7,9 +7,9 @@ import '../theme/connective_theme.dart';
 import '../utils/country.dart';
 import 'server_dialogs.dart';
 
-/// One server row (§4, §16–18): collapsed = flag + name + compact info +
-/// real latency + arrow; expanded = protocol-dependent details + actions.
-/// Expansion is inline (§17), animated, never a modal.
+/// One server row: flag + name + protocol line + latency, with an
+/// inline expandable detail section. Typography and spacing carry
+/// the hierarchy — no colorful pills.
 ///
 /// The leading radio selects the server for the next Connect press
 /// (backend `servers.select`, no connection started). The expanded
@@ -34,33 +34,33 @@ class ServerRow extends StatelessWidget {
         final code = countryCodeOf(
             country: server.country, displayName: server.displayName);
         return Card(
-          margin: const EdgeInsets.symmetric(vertical: 4),
+          margin: const EdgeInsets.symmetric(vertical: 3),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ConnectiveTheme.radius),
+            borderRadius: BorderRadius.circular(
+                ConnectiveTheme.radius),
             side: BorderSide(
               color: isSelected
-                  ? ConnectiveTheme.accent
+                  ? ConnectiveTheme.success
+                      .withValues(alpha: 0.5)
                   : ConnectiveTheme.border,
-              width: isSelected ? 1.5 : 1,
+              width: 1,
             ),
           ),
-          color: isSelected
-              ? ConnectiveTheme.accent.withValues(alpha: 0.08)
-              : null,
+          color: null,
           child: InkWell(
             borderRadius:
                 BorderRadius.circular(ConnectiveTheme.radius),
             onTap: () => store.toggleServer(server.id),
             child: Padding(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      CountryFlag(code: code),
-                      const SizedBox(width: 4),
+                      CountryFlag(code: code, width: 22, height: 16),
+                      const SizedBox(width: 2),
                       // Manual selection control: obvious, keyboard
                       // accessible, never starts a connection by itself.
                       IconButton(
@@ -68,10 +68,10 @@ class ServerRow extends StatelessWidget {
                           isSelected
                               ? Icons.radio_button_checked
                               : Icons.radio_button_unchecked,
-                          size: 20,
+                          size: 18,
                           color: isSelected
-                              ? ConnectiveTheme.accent
-                              : ConnectiveTheme.textSecondary,
+                              ? ConnectiveTheme.success
+                              : ConnectiveTheme.textMuted,
                         ),
                         tooltip: isSelected
                             ? 'Selected for connection'
@@ -80,7 +80,6 @@ class ServerRow extends StatelessWidget {
                             ? store.selectServer('auto')
                             : store.selectServer(server.id),
                       ),
-                      const SizedBox(width: 2),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,36 +90,42 @@ class ServerRow extends StatelessWidget {
                                   child: Text(server.displayName,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          fontSize: 15)),
+                                          fontSize: 13)),
                                 ),
                                 if (isActive) ...[
                                   const SizedBox(width: 6),
                                   Container(
-                                    width: 8,
-                                    height: 8,
+                                    width: 7,
+                                    height: 7,
                                     decoration: const BoxDecoration(
                                         color: ConnectiveTheme.success,
                                         shape: BoxShape.circle),
                                   ),
                                 ],
                                 if (isSelected) ...[
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.check_circle,
-                                      size: 16,
-                                      color: ConnectiveTheme.accent),
+                                  const SizedBox(width: 8),
+                                  const Text('SELECTED',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight:
+                                              FontWeight.w600,
+                                          letterSpacing: 0.5,
+                                          color: ConnectiveTheme
+                                              .success)),
                                 ],
                               ],
                             ),
-                            Text(server.compactInfo,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                        color: ConnectiveTheme
-                                            .textSecondary)),
+                            const SizedBox(height: 1),
+                            Text(
+                                '${server.compactInfo}  ·  ${server.health}',
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: ConnectiveTheme
+                                        .textSecondary)),
                           ],
                         ),
                       ),
+                      const SizedBox(width: 8),
                       if (testing)
                         const SizedBox(
                             width: 14,
@@ -128,18 +133,24 @@ class ServerRow extends StatelessWidget {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2))
                       else
-                        Text(server.latencyLabel,
-                            style: Theme.of(context).textTheme.bodyMedium),
-                      if (isSelected)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: StatusDot(
-                              color: ConnectiveTheme.accent,
-                              label: 'SELECTED'),
+                        SizedBox(
+                          width: 64,
+                          child: Text(server.latencyLabel,
+                              textAlign: TextAlign.end,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      ConnectiveTheme.textSecondary,
+                                  fontFeatures: [
+                                    FontFeature.tabularFigures()
+                                  ])),
                         ),
-                      Icon(expanded
-                          ? Icons.expand_less
-                          : Icons.expand_more),
+                      Icon(
+                          expanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          size: 18,
+                          color: ConnectiveTheme.textMuted),
                     ],
                   ),
                   AnimatedSize(
@@ -163,7 +174,7 @@ class ServerRow extends StatelessWidget {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Divider(),
+          const Divider(height: 16),
           for (final row in server.detailRows())
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
@@ -173,15 +184,13 @@ class ServerRow extends StatelessWidget {
                   SizedBox(
                       width: 110,
                       child: Text(row.key,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                  color:
-                                      ConnectiveTheme.textSecondary))),
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color:
+                                  ConnectiveTheme.textMuted))),
                   Expanded(
                       child: SelectableText(row.value,
-                          style: const TextStyle(fontSize: 13))),
+                          style: const TextStyle(fontSize: 12))),
                 ],
               ),
             ),
@@ -190,34 +199,34 @@ class ServerRow extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              OutlinedButton.icon(
+              FilledButton.icon(
                 onPressed: () async {
                   await store.selectServer(server.id);
                   await store.toggleConnection();
                 },
-                icon: const Icon(Icons.bolt, size: 16),
+                icon: const Icon(Icons.bolt, size: 15),
                 label: const Text('Connect'),
               ),
               OutlinedButton.icon(
                 onPressed: isSelected
                     ? null
                     : () => store.selectServer(server.id),
-                icon: const Icon(Icons.check, size: 16),
+                icon: const Icon(Icons.check, size: 15),
                 label: const Text('Select'),
               ),
               OutlinedButton.icon(
                 onPressed: () => store.testServers([server.id]),
-                icon: const Icon(Icons.speed, size: 16),
+                icon: const Icon(Icons.speed, size: 15),
                 label: const Text('Test'),
               ),
               OutlinedButton.icon(
                 onPressed: () =>
                     showServerEditor(context, store, server),
-                icon: const Icon(Icons.edit, size: 16),
+                icon: const Icon(Icons.edit, size: 15),
                 label: const Text('Edit'),
               ),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, size: 18),
+                icon: const Icon(Icons.more_horiz, size: 18),
                 tooltip: 'More actions',
                 onSelected: (v) =>
                     _action(context, v),
@@ -262,6 +271,10 @@ class ServerRow extends StatelessWidget {
                       child: const Text('Cancel')),
                   FilledButton(
                       onPressed: () => Navigator.pop(c, true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: ConnectiveTheme.danger,
+                        foregroundColor: Colors.white,
+                      ),
                       child: const Text('Delete')),
                 ],
               ),
@@ -273,7 +286,8 @@ class ServerRow extends StatelessWidget {
   }
 }
 
-/// Tiny uppercase badge used next to latency (selected/connected).
+/// Tiny uppercase label used next to latency (selected marker).
+/// Kept for API compatibility; renders as flat text, not a pill.
 class StatusDot extends StatelessWidget {
   final Color color;
   final String label;
@@ -282,16 +296,11 @@ class StatusDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Text(label,
-          style: TextStyle(
-              color: color, fontSize: 10, fontWeight: FontWeight.w700)),
-    );
+    return Text(label.toUpperCase(),
+        style: const TextStyle(
+            color: ConnectiveTheme.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5));
   }
 }

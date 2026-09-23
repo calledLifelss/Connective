@@ -1,5 +1,5 @@
 Name:           connective
-Version:        0.3.1
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Modern desktop VPN client (Flutter + Go + sing-box)
 License:        Apache-2.0 AND GPL-3.0-only
@@ -97,6 +97,10 @@ touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %changelog
+* Thu Sep 24 2026 Connective Team - 0.4.0-1
+- Consolidated UI: Servers and Subscriptions tabs folded into the
+  dashboard (TUN switch, Update all, Add server, Import), restrained
+  charcoal + green visual language, single server summary.
 * Tue Sep 22 2026 Connective Team - 0.3.1-1
 - Updater that finishes: daemon hands activation to a detached
   connective-updater (pkexec/UAC), app restarts into the new build,

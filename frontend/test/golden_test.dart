@@ -72,7 +72,8 @@ void main() {
         height: 800,
         child: ConnectiveApp(store: store)));
     await settle(t);
-    await t.tap(find.text('Servers'));
+    await t.drag(find.byKey(const Key('dash-scroll')),
+        const Offset(0, -400));
     await settle(t);
     final id = store.subscriptions.first.id;
     if (!store.isExpandedSub(id)) {

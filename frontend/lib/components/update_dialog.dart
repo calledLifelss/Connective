@@ -90,7 +90,8 @@ class _Body extends StatelessWidget {
             const Row(
               children: [
                 Icon(Icons.restart_alt,
-                    color: ConnectiveTheme.accent),
+                    size: 18,
+                    color: ConnectiveTheme.textSecondary),
                 SizedBox(width: 8),
                 Expanded(
                     child: Text(
