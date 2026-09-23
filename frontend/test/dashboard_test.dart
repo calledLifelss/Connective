@@ -142,6 +142,9 @@ void main() {
     await settle(tester);
 
     // The entry point opens the existing add dialog in place.
+    // Scroll it into view first: font metrics differ per platform and
+    // the toolbar can sit just below the fold.
+    await see(tester, find.byKey(const Key('dash-add-subscription')));
     await tester.tap(find.byKey(const Key('dash-add-subscription')));
     await settle(tester);
     expect(find.text('Add subscription'), findsOneWidget);
