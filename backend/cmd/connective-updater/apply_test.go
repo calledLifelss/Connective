@@ -64,6 +64,41 @@ func TestApplyActivatesAndReports(t *testing.T) {
 	}
 }
 
+// Staged promotion: the updater copies the daemon-staged tree into
+// the install root before activation (the daemon cannot write there).
+func TestApplyPromotesStaged(t *testing.T) {
+	oldWait := waitExit
+	waitExit = func([]string, time.Duration) error { return nil }
+	defer func() { waitExit = oldWait }()
+	staged := filepath.Join(t.TempDir(), "versions", "9.9.9")
+	applyTree(t, filepath.Dir(filepath.Dir(staged)), "9.9.9")
+	root := t.TempDir()
+	res := filepath.Join(t.TempDir(), "result.json")
+	err := run([]string{"apply", "--install-root", root, "--version", "9.9.9",
+		"--staged-dir", staged, "--result-file", res, "--wait-timeout", "5s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := &update.Installer{Root: root}
+	if got := in.Current(); got != "9.9.9" {
+		t.Fatalf("current = %q", got)
+	}
+	raw, err := os.ReadFile(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r struct {
+		Version string `json:"version"`
+		OK      bool   `json:"ok"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	if !r.OK || r.Version != "9.9.9" {
+		t.Fatalf("result = %s", string(raw))
+	}
+}
+
 // Missing tree must fail with a failed result (never a silent hang).
 func TestApplyMissingTreeFails(t *testing.T) {
 	oldWait := waitExit

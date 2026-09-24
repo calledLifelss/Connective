@@ -13,7 +13,8 @@ Repository: `git@github.com:calledLifelss/Connective.git`
 | stable | `v0.3.0` | 0.3.0 (RPM `0.3.0-1`) | stable | published: RPM, Windows setup, full zips, signed per-platform manifests |
 | stable | `v0.3.1` | 0.3.1 (RPM `0.3.1-1`) | stable | published: finishing updater (restart-to-activate), versioned /opt layout |
 | stable | `v0.4.0` | 0.4.0 (RPM `0.4.0-1`) | stable | published: consolidated dashboard UI |
-| stable | `v0.5.0` | 0.5.0 (RPM `0.5.0-1`) | stable | published: per-app split tunneling + updater hardening (RPM, full zip, signed manifest) |
+| stable | `v0.5.0` | 0.5.0 (RPM `0.5.0-1`) | stable | published: per-app split tunneling + updater hardening (RPM, full zip, signed manifest; no Windows exe — windows job failed on Window-only-untestable app tests) |
+| stable | `v0.5.1` | 0.5.1 (RPM `0.5.1-1`) | stable | pending: updater repair (pkexec spawn, stage promotion, zip strip, cancel-from-restarting) + Windows CI fix |
 
 Version is coherent across Flutter pubspec, Go `CurrentVersion`,
 RPM spec, manifest, and tag (CI `version guard` enforces this).

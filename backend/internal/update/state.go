@@ -59,6 +59,10 @@ var allowed = map[string]map[string]bool{
 	},
 	StateRestarting: {
 		StateUpdated: true, StateFailed: true, StateRolledBack: true,
+		// Withdrawing a spawned installer that never reported: the
+		// pending contract is removed so the next check retries
+		// cleanly instead of wedging on restarting.
+		StateCancelled: true,
 	},
 	StateUpdated: {
 		StateChecking: true,

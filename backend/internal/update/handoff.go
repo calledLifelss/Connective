@@ -34,7 +34,11 @@ type PendingUpdate struct {
 	Version string `json:"version"`
 	Root    string `json:"root"`
 	Updater string `json:"updater"`
-	AtUnix  int64  `json:"atUnix"`
+	// Staged is the assembled versions/<version> tree (under the data
+	// dir, where the unprivileged daemon could write it). Empty means
+	// the tree is already in place under Root (older daemons, tests).
+	Staged string `json:"staged,omitempty"`
+	AtUnix int64  `json:"atUnix"`
 }
 
 // ResultUpdate is the updater's report, consumed once at daemon boot.
@@ -166,14 +170,27 @@ func lookPath(name string) (string, error) { return exec.LookPath(name) }
 
 // spawnArgs builds the updater command line. Everything travels in
 // argv so the (possibly elevated) updater never reads user env.
-func spawnArgs(updaterBin, root, version, resultFile string) []string {
-	return []string{
+func spawnArgs(updaterBin, root, version, staged, resultFile string) []string {
+	args := []string{
 		updaterBin, "apply",
 		"--install-root", root,
 		"--version", version,
 		"--result-file", resultFile,
 		"--wait-timeout", updaterWaitTimeout.String(),
 	}
+	if staged != "" {
+		args = append(args, "--staged-dir", staged)
+	}
+	return args
+}
+
+// ClearPending withdraws a spawned installer contract (cancel from
+// restarting). Best-effort: a missing file is not an error.
+func ClearPending(dataDir string) error {
+	if err := os.Remove(pendingPath(dataDir)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // reconcileBoot consumes leftover update files at daemon startup and

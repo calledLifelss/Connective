@@ -17,17 +17,13 @@ import (
 // updater survives the app closing to finish the install. Output goes
 // to updates/updater.log, never the caller's pipes.
 func spawnUpdaterDetached(bin string, args []string, dataDir string) error {
-	argv := args
-	name := bin
+	prog, progArgs := updaterCommand(bin, args)
 	if isProdRoot(rootOf(args)) && !platform.IsElevated() {
 		runner := platform.HelperRunner()
 		if len(runner) == 0 {
 			return fmt.Errorf("update: start installer: empty helper runner")
 		}
-		full := append([]string{}, runner[1:]...)
-		full = append(full, bin)
-		full = append(full, args[1:]...)
-		name, argv = runner[0], full
+		prog, progArgs = elevateCommand(bin, args, runner)
 	}
 	logPath := filepath.Join(dataDir, "updates", "updater.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
@@ -38,7 +34,7 @@ func spawnUpdaterDetached(bin string, args []string, dataDir string) error {
 		return err
 	}
 	defer log.Close()
-	cmd := exec.Command(name, argv[1:]...)
+	cmd := exec.Command(prog, progArgs...)
 	cmd.Stdout = log
 	cmd.Stderr = log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -47,6 +43,23 @@ func spawnUpdaterDetached(bin string, args []string, dataDir string) error {
 	}
 	_ = cmd.Process.Release()
 	return nil
+}
+
+// updaterCommand builds the direct invocation: run bin with its argv
+// (argv[0] is the binary itself, so the process args are argv[1:]).
+func updaterCommand(bin string, args []string) (string, []string) {
+	return bin, args[1:]
+}
+
+// elevateCommand reshapes [bin, ...args] through a helper runner:
+// [runner..., bin, ...args]. Pure for tests: an earlier version of the
+// pkexec path dropped bin and asked pkexec to run "apply", which died
+// with "No such file or directory" and wedged the UI on restarting.
+func elevateCommand(bin string, args []string, runner []string) (string, []string) {
+	progArgs := append([]string{}, runner[1:]...)
+	progArgs = append(progArgs, bin)
+	progArgs = append(progArgs, args[1:]...)
+	return runner[0], progArgs
 }
 
 // rootOf extracts --install-root from a spawn argv (argv[0] is the binary).

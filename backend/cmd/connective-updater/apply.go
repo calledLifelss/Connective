@@ -33,6 +33,7 @@ func requiredTreeFiles() []string {
 func runApply(fs *flag.FlagSet, args []string) error {
 	root := fs.String("install-root", "", "versioned install root")
 	version := fs.String("version", "", "target version (must be assembled)")
+	staged := fs.String("staged-dir", "", "assembled versions/<ver> tree to promote (daemon staging)")
 	launch := fs.String("launch", "", "new binary to launch after activation")
 	health := fs.Duration("health-timeout", 60*time.Second, "new-version health deadline")
 	resultFile := fs.String("result-file", "", "report path (JSON) for the next app boot")
@@ -55,6 +56,14 @@ func runApply(fs *flag.FlagSet, args []string) error {
 	// tree cannot be replaced underneath it.
 	if err := waitExit(appNames(), *waitTO); err != nil {
 		return fail(fmt.Errorf("app did not close for install: %w", err))
+	}
+	// 2. Promote the daemon-staged tree into the install root (the
+	// daemon cannot write here itself). Already-in-place trees and
+	// older contracts without a staged dir skip straight through.
+	if *staged != "" {
+		if err := update.PromoteStaged(*staged, *root, *version); err != nil {
+			return fail(err)
+		}
 	}
 	// 2. Sanity: never activate a partial tree.
 	if err := checkTree(*root, *version); err != nil {

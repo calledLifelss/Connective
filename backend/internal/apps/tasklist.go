@@ -18,21 +18,24 @@ func windowsProcesses() []string {
 	}
 	var names []string
 	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// First CSV field is the quoted image name: "firefox.exe","1234",...
-		if !strings.HasPrefix(line, "\"") {
-			continue
-		}
-		end := strings.Index(line[1:], "\"")
-		if end <= 0 {
-			continue
-		}
-		if name := strings.TrimSpace(line[1 : 1+end]); name != "" {
+		if name := parseTasklistLine(line); name != "" {
 			names = append(names, name)
 		}
 	}
 	return names
+}
+
+// parseTasklistLine extracts the image name from one `tasklist /FO CSV
+// /NH` row: the first quoted field ("firefox.exe","1234",...). Pure
+// for unit tests (no process execution).
+func parseTasklistLine(line string) string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "\"") {
+		return ""
+	}
+	end := strings.Index(line[1:], "\"")
+	if end <= 0 {
+		return ""
+	}
+	return strings.TrimSpace(line[1 : 1+end])
 }

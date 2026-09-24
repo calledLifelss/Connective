@@ -125,7 +125,11 @@ func unzipOneBudgeted(f *zip.File, outDir string, budget *unzipBudget) error {
 	return nil
 }
 
-func copyDir(src, dst string) error {
+func copyDir(src, dst string) error { return CopyTree(src, dst) }
+
+// CopyTree copies a directory tree (used by delta assembly and the
+// updater's stage promotion into the install root).
+func CopyTree(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

@@ -1,5 +1,5 @@
 Name:           connective
-Version:        0.5.0
+Version:        0.5.1
 Release:        1%{?dist}
 Summary:        Modern desktop VPN client (Flutter + Go + sing-box)
 License:        Apache-2.0 AND GPL-3.0-only
@@ -97,6 +97,14 @@ touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %changelog
+* Thu Sep 24 2026 Connective Team - 0.5.1-1
+- Updater repair: pkexec spawn kept the updater binary (was asking
+  pkexec to run "apply"), daemon-staged trees are promoted into the
+  install root before activation, top-folder zips with dir entries
+  strip correctly, Cancel works from restarting. 0.4.0 installs must
+  take this RPM manually once; in-app updates work going forward.
+- Windows CI fix: /proc-based app-inventory tests are Linux-gated so
+  the Windows job (and its setup.exe upload) runs green again.
 * Thu Sep 24 2026 Connective Team - 0.5.0-1
 - Per-app split tunneling: bypass listed apps (direct) or VPN-only
   listed apps, running-apps-first picker (Routing page), process_name

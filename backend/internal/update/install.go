@@ -123,6 +123,53 @@ func (in *Installer) Assemble(ctx context.Context, target string, stagedArtifact
 	return dir, nil
 }
 
+// PromoteStaged copies an assembled versions/<ver> tree from a staging
+// directory (writable by the unprivileged daemon) into the install
+// root (writable by the elevated updater), so activation can proceed.
+// Idempotent: an existing destination tree is kept as-is (assembly
+// only renames complete trees into place, so presence means complete).
+func PromoteStaged(stagedVerDir, root, ver string) error {
+	if _, err := ParseVersion(ver); err != nil {
+		return err
+	}
+	if strings.ContainsAny(ver, `/\`) {
+		return fmt.Errorf("update: unsafe version %q", ver)
+	}
+	st, err := os.Stat(stagedVerDir)
+	if err != nil || !st.IsDir() {
+		return fmt.Errorf("update: staged tree %s missing", stagedVerDir)
+	}
+	in := &Installer{Root: root}
+	dest, err := in.VersionDir(ver)
+	if err != nil {
+		return err
+	}
+	if cleanPath(stagedVerDir) == cleanPath(dest) {
+		return nil
+	}
+	if _, err := os.Lstat(dest); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(in.versionsDir(), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(in.versionsDir(), "promote-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	build := filepath.Join(tmp, "tree")
+	if err := CopyTree(stagedVerDir, build); err != nil {
+		return fmt.Errorf("update: promote %s: %w", ver, err)
+	}
+	if err := os.Rename(build, dest); err != nil {
+		return fmt.Errorf("update: promote %s: %w", ver, err)
+	}
+	return nil
+}
+
+func cleanPath(p string) string { return filepath.Clean(p) }
+
 // Activate atomically points `current` at versions/<target>, anchoring
 // the old tree in `previous` for rollback. Returns the previous version
 // ("" when none). On unix the final switch is an atomic rename; on
@@ -214,7 +261,7 @@ func unzipAll(src, dst string) error {
 		return err
 	}
 	defer z.Close()
-	strip := zipTopPrefix(z)
+	strip := zipTopPrefix(z.File)
 	budget := newUnzipBudget()
 	for _, f := range z.File {
 		if err := unzipOneStripBudgeted(f, dst, strip, budget); err != nil {
@@ -227,25 +274,34 @@ func unzipAll(src, dst string) error {
 // zipTopPrefix detects the single-top-folder convention (all members
 // under one root dir, nothing at root): full artifacts built as
 // `zip -r full.zip <version>/` carry it, flat zips do not. Deltas are
-// overlays and NEVER strip (see ZipOverlayApplier).
-func zipTopPrefix(z *zip.ReadCloser) string {
+// overlays and NEVER strip (see ZipOverlayApplier). A bare directory
+// entry for the top folder itself (e.g. "0.5.0/", which `zip -r`
+// always emits) is tolerated — only a bare FILE at root means flat.
+func zipTopPrefix(files []*zip.File) string {
 	var top string
-	for _, f := range z.File {
+	for _, f := range files {
 		name := strings.TrimSuffix(f.Name, "/")
 		if name == "" {
 			continue
 		}
-		seg := name
-		if i := strings.Index(seg, "/"); i >= 0 {
-			seg = seg[:i]
-		} else {
-			return "" // a file at root: flat layout
+		if i := strings.Index(name, "/"); i >= 0 {
+			seg := name[:i]
+			if top == "" {
+				top = seg
+			} else if top != seg {
+				return "" // multiple roots: not the single-folder case
+			}
+			continue
 		}
-		if top == "" {
-			top = seg
-		} else if top != seg {
-			return "" // multiple roots: not the single-folder case
+		if f.FileInfo().IsDir() {
+			if top == "" {
+				top = name
+			} else if top != name {
+				return ""
+			}
+			continue
 		}
+		return "" // a file at root: flat layout
 	}
 	return top
 }

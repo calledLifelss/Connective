@@ -524,9 +524,13 @@ func (m *Manager) Install(ctx context.Context) Status {
 	}
 	m.setState(StateStaging, "")
 	ver := m.pending.Manifest.Manifest.Version
+	// Test/dev applies assemble in place against TestRoot. Production
+	// assembles into a staging root under the data dir (the
+	// unprivileged daemon cannot write the install root); the
+	// elevated updater promotes the tree before activation.
 	root := m.TestRoot
-	if root == "" {
-		root = filepath.Join(m.updatesDir(), "versions-root")
+	if !m.TestApply || root == "" {
+		root = filepath.Join(m.updatesDir(), "stage-root")
 	}
 	installer := &Installer{Root: root}
 	kind := m.artifact.Type
@@ -624,14 +628,16 @@ func (m *Manager) Install(ctx context.Context) Status {
 }
 
 // handoff writes the updater contract and spawns the detached
-// installer. dir is the assembled tree (kept for the log only).
+// installer. dir is the assembled versions/<ver> tree, which the
+// elevated updater promotes into the install root before activation
+// (the daemon itself cannot write there).
 func (m *Manager) handoff(dir, ver string) error {
 	root := resolveInstallRoot(m.DaemonExe, m.DataDir)
 	bin := resolveUpdaterBin(m.DaemonExe, root)
 	if bin == "" {
 		return fmt.Errorf("update: installer binary not found")
 	}
-	pend := PendingUpdate{Version: ver, Root: root, Updater: bin, AtUnix: m.now().Unix()}
+	pend := PendingUpdate{Version: ver, Root: root, Updater: bin, Staged: dir, AtUnix: m.now().Unix()}
 	if err := writeJSON(pendingPath(m.DataDir), pend); err != nil {
 		return err
 	}
@@ -639,10 +645,14 @@ func (m *Manager) handoff(dir, ver string) error {
 	if spawn == nil {
 		spawn = spawnUpdaterDetached
 	}
-	return spawn(bin, spawnArgs(bin, root, ver, resultPath(m.DataDir)), m.DataDir)
+	return spawn(bin, spawnArgs(bin, root, ver, dir, resultPath(m.DataDir)), m.DataDir)
 }
 
-// Cancel aborts an in-flight download/install step.
+// Cancel aborts an in-flight download/install step. Cancelling from
+// restarting withdraws a spawned installer that never reported (its
+// pending contract is removed): the updater may still be waiting for
+// the app to close, but without a result file the next boot offers a
+// clean retry instead of a surprise activation announcement.
 func (m *Manager) Cancel() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -652,6 +662,9 @@ func (m *Manager) Cancel() Status {
 	}
 	switch m.status.State {
 	case StateDownloading, StateVerifying, StateStaging, StateChecking:
+		m.setState(StateCancelled, "")
+	case StateRestarting:
+		os.Remove(pendingPath(m.DataDir))
 		m.setState(StateCancelled, "")
 	}
 	return m.snapshot()

@@ -1,6 +1,7 @@
 package update
 
 import (
+	"archive/zip"
 	"context"
 	"os"
 	"path/filepath"
@@ -158,5 +159,80 @@ func TestRollbackEmpty(t *testing.T) {
 	in := &Installer{Root: t.TempDir()}
 	if _, err := in.Rollback(); err == nil {
 		t.Error("rollback with no previous must fail")
+	}
+}
+
+// writeZipWithDirEntry mimics `zip -r full.zip <version>/`, which
+// always emits an explicit top-folder entry ("0.9.9/"). That entry
+// once defeated top-folder stripping and nested the tree a level.
+func writeZipWithDirEntry(t *testing.T, dir, top string, files map[string]string) string {
+	t.Helper()
+	p := filepath.Join(dir, "full.zip")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	if _, err := zw.Create(top + "/"); err != nil {
+		t.Fatal(err)
+	}
+	for n, c := range files {
+		w, err := zw.Create(top + "/" + n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestFullTopFolderDirEntryStripped(t *testing.T) {
+	root := t.TempDir()
+	in := &Installer{Root: root}
+	nested := writeZipWithDirEntry(t, t.TempDir(), "0.9.9", map[string]string{
+		"connective": "bin",
+		"data/x":     "1",
+	})
+	dir, err := in.Assemble(context.Background(), "0.9.9", nested, ArtifactFull, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "connective")); string(got) != "bin" {
+		t.Fatalf("top folder not stripped: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "0.9.9")); !os.IsNotExist(err) {
+		t.Fatal("nested top folder must not survive stripping")
+	}
+}
+
+func TestPromoteStaged(t *testing.T) {
+	stage := t.TempDir()
+	stagedVer := filepath.Join(stage, "versions", "0.9.9")
+	writeTree(t, stagedVer, map[string]string{"connective": "bin", "data/x": "1"})
+	root := t.TempDir()
+	if err := PromoteStaged(stagedVer, root, "0.9.9"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "versions", "0.9.9", "connective")); string(got) != "bin" {
+		t.Fatalf("promoted tree wrong: %q", got)
+	}
+	// Idempotent: second promotion keeps the tree.
+	if err := PromoteStaged(stagedVer, root, "0.9.9"); err != nil {
+		t.Fatal(err)
+	}
+	// Missing staged tree and bad versions fail honestly.
+	if err := PromoteStaged(filepath.Join(stage, "nope"), root, "0.9.9"); err == nil {
+		t.Error("missing staged tree must fail")
+	}
+	if err := PromoteStaged(stagedVer, root, "../evil"); err == nil {
+		t.Error("unsafe version must fail")
 	}
 }

@@ -75,6 +75,82 @@ func TestHandoffNoUpdaterFails(t *testing.T) {
 	}
 }
 
+// A result file with an unparsable version is consumed but announces
+// nothing (the result dir is user-writable: never trust it blindly).
+func TestReconcileBootBadVersion(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := WriteResult(resultPath(dataDir), "not-a-version!!", true, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{DataDir: dataDir, CurrentVersion: func() string { return "0.3.0" }}
+	if err := m.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if m.Status().State != StateIdle {
+		t.Fatalf("state = %q, want idle", m.Status().State)
+	}
+	if _, err := os.Stat(resultPath(dataDir)); !os.IsNotExist(err) {
+		t.Fatal("bad result not consumed")
+	}
+}
+
+// Full production-shaped flow (no test apply): install hands a staged
+// tree to a hooked spawn and lands on restarting; cancelling from
+// there withdraws the pending contract and frees the UI instead of
+// wedging on restarting forever.
+func TestCancelFromRestarting(t *testing.T) {
+	pub, priv, id := testKeys(t)
+	current := "0.3.0"
+	m, dir := testManager(t, &current, pub, id)
+	m.TestApply = false
+	binDir := t.TempDir()
+	fakeDaemon := filepath.Join(binDir, "connectived")
+	if err := os.WriteFile(fakeDaemon, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, updaterExeName()), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.DaemonExe = fakeDaemon
+	var joined string
+	m.Spawn = func(bin string, args []string, dd string) error {
+		for _, a := range args {
+			joined += a + " "
+		}
+		return nil
+	}
+	sha := putZip(t, dir, "full.zip", map[string]string{"connective": "v2"})
+	st, _ := os.Stat(filepath.Join(dir, "full.zip"))
+	publish(t, dir, fullManifest(t, dir, "0.3.1", sha, st.Size()), id, priv)
+
+	ctx := context.Background()
+	if got := m.Check(ctx, true); got.State != StateUpdateAvailable {
+		t.Fatalf("check: %s (%s)", got.State, got.Error)
+	}
+	if got := m.Download(ctx); got.State != StateUpdateAvailable {
+		t.Fatalf("download: %s (%s)", got.State, got.Error)
+	}
+	if got := m.Install(ctx); got.State != StateRestarting {
+		t.Fatalf("install: %s (%s)", got.State, got.Error)
+	}
+	if !strings.Contains(joined, "--staged-dir") {
+		t.Fatalf("spawn argv missing staged dir: %q", joined)
+	}
+	var pend PendingUpdate
+	if err := readJSON(pendingPath(m.DataDir), &pend); err != nil {
+		t.Fatalf("pending not written: %v", err)
+	}
+	if pend.Staged == "" {
+		t.Fatalf("pending missing staged tree: %+v", pend)
+	}
+	if got := m.Cancel(); got.State != StateCancelled {
+		t.Fatalf("cancel: %s", got.State)
+	}
+	if _, err := os.Stat(pendingPath(m.DataDir)); !os.IsNotExist(err) {
+		t.Fatal("cancel must withdraw the pending contract")
+	}
+}
+
 // A consumed ok-result seeds updated; failed seeds failed; both are
 // one-shot (files removed).
 func TestReconcileBootResult(t *testing.T) {
