@@ -215,8 +215,9 @@ func unzipAll(src, dst string) error {
 	}
 	defer z.Close()
 	strip := zipTopPrefix(z)
+	budget := newUnzipBudget()
 	for _, f := range z.File {
-		if err := unzipOneStrip(f, dst, strip); err != nil {
+		if err := unzipOneStripBudgeted(f, dst, strip, budget); err != nil {
 			return err
 		}
 	}
@@ -251,6 +252,12 @@ func zipTopPrefix(z *zip.ReadCloser) string {
 
 // unzipOneStrip extracts one member, stripping a single top folder.
 func unzipOneStrip(f *zip.File, outDir, strip string) error {
+	return unzipOneStripBudgeted(f, outDir, strip, newUnzipBudget())
+}
+
+// unzipOneStripBudgeted shares one extraction budget across a whole
+// artifact so a many-small-files bomb cannot evade per-file limits.
+func unzipOneStripBudgeted(f *zip.File, outDir, strip string, budget *unzipBudget) error {
 	name := f.Name
 	if strip != "" {
 		if name != strip && !strings.HasPrefix(name, strip+"/") {
@@ -263,5 +270,5 @@ func unzipOneStrip(f *zip.File, outDir, strip string) error {
 	}
 	f2 := *f
 	f2.Name = name
-	return unzipOne(&f2, outDir)
+	return unzipOneBudgeted(&f2, outDir, budget)
 }

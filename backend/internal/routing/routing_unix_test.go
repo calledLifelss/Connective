@@ -26,6 +26,15 @@ func TestHexIP(t *testing.T) {
 }
 
 func TestVerifyTUNDefaultLive(t *testing.T) {
+	// Live probe only: never changes routes, only reads `ip route get`.
+	// When the VPN is up, egress is legitimately via connective0, so
+	// both branches below would invert. Skip instead of failing — the
+	// test assumes a disconnected host.
+	if iface, err := EgressIface("8.8.8.8"); err == nil && iface == "connective0" {
+		t.Skipf("vpn active (egress via connective0); live expectations assume disconnected")
+	} else if err != nil {
+		t.Skipf("no egress probe here: %v", err)
+	}
 	// Proxy-mode expectation: egress must NOT be the TUN device.
 	if err := VerifyTUNDefault("connective0", false); err != nil {
 		t.Fatalf("proxy-mode check: %v", err)

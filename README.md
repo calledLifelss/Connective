@@ -20,7 +20,9 @@ only and never claims a state the daemon didn't report.
   process (start/stop/restart, no orphans).
 - **TUN** — full-tunnel mode with foreign-tunnel conflict detection
   (fails safely instead of corrupting routes).
-- **Routing** — global and rules modes applied through the core.
+- **Routing** — global and rules modes applied through the core,
+-   plus per-app split tunneling (bypass listed apps, or VPN only
+-   listed apps; running apps first in the picker).
 - **DNS** — system, custom, and proxy-aware modes with leak-aware
   handling.
 - **Kill switch** — optional traffic lockdown around the tunnel.
@@ -83,7 +85,7 @@ Key docs: `docs/ARCHITECTURE.md`, `docs/IPC_CONTRACT.md`,
 and install:
 
 ```bash
-sudo rpm -Uvh connective-0.2.0-*.fc44.x86_64.rpm
+sudo rpm -Uvh connective-0.4.0-*.fc44.x86_64.rpm
 ```
 
 Launch **Connective** from the application menu. The UI never runs as
@@ -158,7 +160,6 @@ A failed or forged update can never replace the working installation.
 - Versioned `/opt` layout migration for the RPM (updater-ready).
 - Windows release.
 - CI-built release artifacts on every release tag.
-- Per-app split routing rules UI.
 
 ## License
 

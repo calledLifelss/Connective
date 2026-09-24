@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,7 +97,7 @@ func (d *Daemon) initUpdates() {
 		Log:       d.log,
 		OnEvent:   func(s update.Status) { d.ipc.Broadcast(ipc.EventUpdate, s) },
 		TestApply: os.Getenv("CONNECTIVE_UPDATE_TEST_APPLY") == "1",
-		TestRoot:  dataDir + "/updates/test-root",
+		TestRoot:  filepath.Join(dataDir, "updates", "test-root"),
 	}
 	if err := m.Init(); err != nil {
 		d.log.Warn("update manager init failed: %v", err)

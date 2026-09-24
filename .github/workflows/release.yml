@@ -1,7 +1,7 @@
 name: release
 
-# Intentional release tags only: v0.2.0 (stable), v0.2.1-test.1 (prerelease).
-# Normal pushes never publish: see ci.yml.
+# Intentional release tags only (e.g. v0.4.0 stable, v0.5.0 stable,
+# v0.5.1-beta.1 prerelease). Normal pushes never publish: see ci.yml.
 on:
   push:
     tags: ['v*']

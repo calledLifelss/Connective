@@ -187,6 +187,11 @@ func reconcileBoot(dataDir string) *bootSeed {
 	if err := readJSON(resultPath(dataDir), &res); err == nil && res.Version != "" {
 		os.Remove(resultPath(dataDir))
 		os.Remove(pendingPath(dataDir))
+		// The result file lives in the user-writable data dir: never
+		// announce a version that doesn't parse (spoofed/corrupt).
+		if _, verr := ParseVersion(res.Version); verr != nil {
+			return nil
+		}
 		return &bootSeed{version: res.Version, ok: res.OK, errMsg: res.Error}
 	}
 	var pend PendingUpdate

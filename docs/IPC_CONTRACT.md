@@ -46,6 +46,7 @@ Frame: `{"v":"1","id":"<req id>","type":"<method|event>","payload":{...},"error"
 | `logs.get` | `{n?, level?}` | `[Entry]` |
 | `logs.clear` | — | ok |
 | `stats.get` | — | `{up, down, upTotal, downTotal, durationMs}` |
+| `apps.list` | — | `[App]` — distinct running programs (`{id, name, count}`, most instances first) for the split-tunnel picker |
 | `ui.get` / `ui.update` | — / `{state}` | UI state (collapse maps etc.) |
 | `update.check` | — | snapshot; check runs async, result via `event.update` |
 | `update.status` | — | `{state, info?, progress, error?, channel, currentVersion, lastCheckUnix}` |

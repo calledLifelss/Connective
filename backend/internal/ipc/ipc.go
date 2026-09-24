@@ -57,6 +57,7 @@ const (
 	MethodGetLogs            = "logs.get"
 	MethodClearLogs          = "logs.clear"
 	MethodGetStats           = "stats.get"
+	MethodAppsList           = "apps.list"
 	MethodUIGet              = "ui.get"
 	MethodUIUpdate           = "ui.update"
 	MethodUpdateCheck        = "update.check"

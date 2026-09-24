@@ -269,3 +269,82 @@ func TestGroupEmpty(t *testing.T) {
 		t.Errorf("expected error for empty group")
 	}
 }
+
+func routeOf(t *testing.T, opts Options) (string, []map[string]any) {
+	t.Helper()
+	raw, err := Generate(mustParse(t, "trojan://pw@trojan.example.org:443#T"), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Route struct {
+			Final string           `json:"final"`
+			Rules []map[string]any `json:"rules"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Route.Final, cfg.Route.Rules
+}
+
+func TestSplitOffNoProcessRules(t *testing.T) {
+	final, rules := routeOf(t, DefaultOptions())
+	if final != "proxy" {
+		t.Fatalf("final = %q", final)
+	}
+	for _, r := range rules {
+		if _, ok := r["process_name"]; ok {
+			t.Fatalf("off mode must not emit process rules: %v", r)
+		}
+	}
+}
+
+func TestSplitBypassRoutesAppsDirect(t *testing.T) {
+	opts := DefaultOptions()
+	opts.SplitMode = "bypass"
+	opts.SplitApps = []string{"firefox", "discord"}
+	final, rules := routeOf(t, opts)
+	if final != "proxy" {
+		t.Fatalf("bypass keeps proxy final, got %q", final)
+	}
+	if len(rules) == 0 {
+		t.Fatal("no rules")
+	}
+	first := rules[0]
+	names, _ := first["process_name"].([]any)
+	if len(names) != 2 || first["outbound"] != "direct" {
+		t.Fatalf("bad bypass rule: %v", first)
+	}
+}
+
+func TestSplitOnlyRoutesAppsProxyRestDirect(t *testing.T) {
+	opts := DefaultOptions()
+	opts.SplitMode = "only"
+	opts.SplitApps = []string{"firefox"}
+	final, rules := routeOf(t, opts)
+	if final != "direct" {
+		t.Fatalf("only mode flips final to direct, got %q", final)
+	}
+	first := rules[0]
+	names, _ := first["process_name"].([]any)
+	if len(names) != 1 || first["outbound"] != "proxy" {
+		t.Fatalf("bad only rule: %v", first)
+	}
+}
+
+func TestSplitEmptyAppsNoChange(t *testing.T) {
+	for _, mode := range []string{"bypass", "only"} {
+		opts := DefaultOptions()
+		opts.SplitMode = mode
+		final, rules := routeOf(t, opts)
+		if final != "proxy" {
+			t.Fatalf("mode %s with no apps must keep proxy final, got %q", mode, final)
+		}
+		for _, r := range rules {
+			if _, ok := r["process_name"]; ok {
+				t.Fatalf("mode %s with no apps must not emit process rules", mode)
+			}
+		}
+	}
+}

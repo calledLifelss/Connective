@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 
 import '../models/connection_state.dart';
+import '../models/running_app.dart';
 import '../models/server.dart';
 import '../models/settings.dart';
 import '../models/subscription.dart';
@@ -836,6 +837,101 @@ class AppStore extends ChangeNotifier {
           notifyListeners();
         }
       });
+
+  // --- split tunnel (per-app routing; backend-owned settings) ---
+  List<RunningApp> runningApps = const [];
+  bool runningAppsLoading = false;
+
+  /// Refresh the running-process inventory (read-only daemon probe).
+  /// Quiet on failure: manual entry always stays available.
+  Future<void> refreshRunningApps() async {
+    runningAppsLoading = true;
+    notifyListeners();
+    try {
+      final out = await client.call('apps.list');
+      if (out is List) {
+        runningApps = [
+          for (final e in out)
+            if (e is Map)
+              RunningApp.fromJson(Map<String, dynamic>.from(e))
+        ];
+        notifyListeners();
+      }
+    } catch (_) {
+    } finally {
+      runningAppsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Merged picker rows: running apps first (most instances, then
+  /// name), then configured-but-not-running apps alphabetically.
+  List<SplitAppRow> splitAppRows() {
+    final configured = settings.splitApps.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+    final byId = <String, RunningApp>{};
+    for (final a in runningApps) {
+      if (a.id.isNotEmpty) byId[a.id] = a;
+    }
+    final rows = <SplitAppRow>[];
+    final sortedRunning = [...byId.values]..sort((a, b) {
+      if (a.count != b.count) return b.count.compareTo(a.count);
+      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+    });
+    for (final a in sortedRunning) {
+      rows.add(SplitAppRow(
+        id: a.id,
+        name: a.displayName,
+        running: true,
+        count: a.count,
+        selected: configured.contains(a.id),
+      ));
+    }
+    final rest = configured.difference(byId.keys.toSet()).toList()..sort();
+    for (final id in rest) {
+      rows.add(SplitAppRow(
+        id: id,
+        name: id,
+        running: false,
+        count: 0,
+        selected: true,
+      ));
+    }
+    return rows;
+  }
+
+  Future<void> setSplitMode(String mode) => _guarded(() async {
+        final out = await client.call(
+            'settings.update', settings.copyWith(splitMode: mode).toJson());
+        if (out is Map) {
+          settings =
+              AppSettings.fromJson(Map<String, dynamic>.from(out));
+          notifyListeners();
+        }
+      });
+
+  Future<void> setSplitAppSelected(String id, bool selected) =>
+      _guarded(() async {
+        final cur = settings.splitApps.toSet();
+        if (selected) {
+          cur.add(id.trim());
+        } else {
+          cur.remove(id.trim());
+        }
+        final next = cur.where((e) => e.trim().isNotEmpty).toList();
+        final out = await client.call('settings.update',
+            settings.copyWith(splitApps: next).toJson());
+        if (out is Map) {
+          settings =
+              AppSettings.fromJson(Map<String, dynamic>.from(out));
+          notifyListeners();
+        }
+      });
+
+  Future<void> addSplitApp(String id) =>
+      setSplitAppSelected(id.trim(), true);
+
+  Future<void> removeSplitApp(String id) =>
+      setSplitAppSelected(id, false);
 
   // --- logs ---
 

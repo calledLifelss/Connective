@@ -4,6 +4,8 @@
 // versions forward-tolerate newer documents.
 package settings
 
+import "strings"
+
 // Settings is the full application configuration.
 type Settings struct {
 	AutoConnect   bool   `json:"autoConnect"`
@@ -32,7 +34,25 @@ type Settings struct {
 	UpdateChannel string `json:"updateChannel"`
 	// UpdateAutoCheck enables the periodic background update check.
 	UpdateAutoCheck bool `json:"updateAutoCheck"`
+
+	// Split-tunnel (per-app routing). SplitMode is one of "off"
+	// (everything via VPN), "bypass" (listed apps go direct), or "only"
+	// (only listed apps use the VPN). SplitApps holds normalized
+	// executable basenames (see internal/apps); applied on next connect.
+	SplitMode string   `json:"splitMode"`
+	SplitApps []string `json:"splitApps"`
 }
+
+// Split tunnel modes.
+const (
+	SplitOff    = "off"
+	SplitBypass = "bypass"
+	SplitOnly   = "only"
+)
+
+// MaxSplitApps caps the per-app list so a hostile document cannot bloat
+// the generated core config.
+const MaxSplitApps = 200
 
 // Defaults returns first-run settings: AUTO mode, global routing,
 // proxy-aware DNS, TUN on (Linux primary target).
@@ -55,6 +75,8 @@ func Defaults() Settings {
 		HealthIntervalSec:  30,
 		UpdateChannel:      "stable",
 		UpdateAutoCheck:    true,
+		SplitMode:          SplitOff,
+		SplitApps:          []string{},
 	}
 }
 
@@ -102,4 +124,59 @@ func (s *Settings) Validate() {
 	default:
 		s.UpdateChannel = "stable"
 	}
+	switch s.SplitMode {
+	case SplitOff, SplitBypass, SplitOnly:
+	default:
+		s.SplitMode = SplitOff
+	}
+	s.SplitApps = normalizeAppList(s.SplitApps)
+}
+
+// normalizeAppList canonicalizes per-app entries without importing the
+// apps package (settings stays dependency-free): basename, lowercase,
+// ".exe" stripped, charset-checked, deduped, capped.
+func normalizeAppList(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		id := normalizeAppID(s)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+		if len(out) >= MaxSplitApps {
+			break
+		}
+	}
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
+func normalizeAppID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	s = strings.ReplaceAll(s, "\\", "/")
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		s = s[i+1:]
+	}
+	s = strings.TrimSpace(s)
+	if s == "" || s == "." || s == "/" {
+		return ""
+	}
+	s = strings.ToLower(s)
+	s = strings.TrimSuffix(s, ".exe")
+	if s == "" || len(s) > 128 {
+		return ""
+	}
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' || c == '+') {
+			return ""
+		}
+	}
+	return s
 }

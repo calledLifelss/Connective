@@ -57,6 +57,11 @@ func (p DirProvider) OpenArtifact(ctx context.Context, a Artifact) (io.ReadClose
 			return nil, fmt.Errorf("update: refusing remote file host %q", u.Host)
 		}
 		name = u.Path
+		// URL paths always start with '/'; Windows needs the drive
+		// form (C:/…), not the URL form (/C:/…) — same as Downloader.
+		if len(name) > 2 && name[0] == '/' && name[2] == ':' {
+			name = name[1:]
+		}
 	} else if strings.Contains(a.URL, "://") {
 		return nil, fmt.Errorf("update: local provider cannot fetch %q", a.URL)
 	} else if a.URL != "" {

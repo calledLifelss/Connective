@@ -260,38 +260,87 @@ func (p GitHubProvider) OpenArtifact(ctx context.Context, a Artifact) (io.ReadCl
 	return resp.Body, nil
 }
 
-// listReleases fetches the release index (newest first from the API).
+// listReleases fetches the release index (newest first from the API),
+// following GitHub pagination (Link rel="next") up to a bounded number
+// of pages so repos with >100 releases still resolve older updates.
 func (p GitHubProvider) listReleases(ctx context.Context) ([]ghRelease, error) {
 	u := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", p.apiBase(), p.Owner, p.Repo)
+	var all []ghRelease
+	for page := 0; page < 5; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		pageRels, next, err := p.fetchReleasePage(ctx, u)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, pageRels...)
+		if next == "" {
+			return all, nil
+		}
+		u = next
+	}
+	return all, nil
+}
+
+// fetchReleasePage fetches one release index page, returning the parsed
+// releases plus the Link rel="next" URL ("" when last).
+func (p GitHubProvider) fetchReleasePage(ctx context.Context, u string) ([]ghRelease, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	p.auth(req)
 	resp, err := p.client().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("update: releases fetch: %w", err)
+		return nil, "", fmt.Errorf("update: releases fetch: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		if rl := rateLimit(resp); rl != nil {
-			return nil, rl
+			return nil, "", rl
 		}
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("update: repository %s/%s not found", p.Owner, p.Repo)
+			return nil, "", fmt.Errorf("update: repository %s/%s not found", p.Owner, p.Repo)
 		}
-		return nil, fmt.Errorf("update: releases API returned %s", resp.Status)
+		return nil, "", fmt.Errorf("update: releases API returned %s", resp.Status)
 	}
 	limited, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var rels []ghRelease
 	if err := json.Unmarshal(limited, &rels); err != nil {
-		return nil, fmt.Errorf("update: bad releases response: %w", err)
+		return nil, "", fmt.Errorf("update: bad releases response: %w", err)
 	}
-	return rels, nil
+	return rels, parseNextLink(resp.Header.Get("Link")), nil
+}
+
+// parseNextLink extracts the URL with rel="next" from a GitHub Link
+// header ("" when absent). Malformed segments are ignored.
+func parseNextLink(header string) string {
+	for _, seg := range strings.Split(header, ",") {
+		parts := strings.Split(seg, ";")
+		if len(parts) < 2 {
+			continue
+		}
+		urlPart := strings.TrimSpace(parts[0])
+		if !strings.HasPrefix(urlPart, "<") || !strings.HasSuffix(urlPart, ">") {
+			continue
+		}
+		isNext := false
+		for _, param := range parts[1:] {
+			if strings.TrimSpace(param) == `rel="next"` {
+				isNext = true
+				break
+			}
+		}
+		if isNext {
+			return strings.TrimSuffix(strings.TrimPrefix(urlPart, "<"), ">")
+		}
+	}
+	return ""
 }
 
 // getBytes fetches a small document with a size cap.
@@ -328,18 +377,27 @@ func (p GitHubProvider) auth(req *http.Request) {
 	}
 }
 
-// rateLimit maps throttling responses (403/429 with zero quota) to a
-// typed error the manager renders calmly.
+// rateLimit maps throttling responses to a typed error the manager
+// renders calmly. 429 is always throttling; 403 needs corroboration
+// (zero quota or an explicit Retry-After, covering secondary limits).
 func rateLimit(resp *http.Response) error {
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != 429 {
 		return nil
 	}
-	if resp.Header.Get("X-RateLimit-Remaining") != "0" {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		// 429: throttled regardless of quota headers.
+	} else if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		// Primary limit exhausted.
+	} else if resp.Header.Get("Retry-After") != "" {
+		// Secondary limit with backoff hint.
+	} else {
 		return nil
 	}
 	var reset time.Time
 	if n, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil && n > 0 {
 		reset = time.Unix(n, 0)
+	} else if s, err := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("Retry-After")), 10, 64); err == nil && s > 0 {
+		reset = time.Now().Add(time.Duration(s) * time.Second)
 	}
 	return &RateLimitError{Reset: reset}
 }

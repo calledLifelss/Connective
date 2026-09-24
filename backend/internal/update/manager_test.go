@@ -205,21 +205,31 @@ func TestManagerDeltaFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fullSHA := putZip(t, dir, "full.zip", map[string]string{"connective": "v2-full"})
+	fullSHA := putZip(t, dir, "full.zip", map[string]string{
+		"connective": "v2-full-" + repeat("0123456789abcdef", 512),
+		"extra-blob": repeat("0123456789abcdef", 512),
+	})
 	fullSt, _ := os.Stat(filepath.Join(dir, "full.zip"))
 	deltaSHA := putZip(t, dir, "delta.zip", map[string]string{"connective": "v2-delta"})
 	deltaSt, _ := os.Stat(filepath.Join(dir, "delta.zip"))
+	// Selection uses the manifest Size field (SHA still verifies the real
+	// bytes; the DirProvider stream path tolerates the declared size, as
+	// in the fallback test). Force delta < full deterministically instead
+	// of skipping when compression makes tiny zips tie.
+	fullSize, deltaSize := fullSt.Size(), deltaSt.Size()
+	if deltaSize >= fullSize {
+		deltaSize = fullSize / 2
+		if deltaSize <= 0 {
+			deltaSize = 1
+		}
+	}
 	mm := Manifest{
 		Schema: ManifestSchema, Version: "0.2.1", Channel: ChannelStable,
 		MinVersion: "0.2.0", Platform: testPlatform(), Arch: testArch(),
 		Artifacts: []Artifact{
-			{Type: ArtifactFull, Filename: "full.zip", Size: fullSt.Size(), SHA256: fullSHA, URL: "full.zip"},
-			{Type: ArtifactDelta, Filename: "delta.zip", Size: deltaSt.Size(), SHA256: deltaSHA, URL: "delta.zip", FromVersion: "0.2.0"},
+			{Type: ArtifactFull, Filename: "full.zip", Size: fullSize, SHA256: fullSHA, URL: "full.zip"},
+			{Type: ArtifactDelta, Filename: "delta.zip", Size: deltaSize, SHA256: deltaSHA, URL: "delta.zip", FromVersion: "0.2.0"},
 		},
-	}
-	// Shrink the delta so selection prefers it deterministically.
-	if deltaSt.Size() >= fullSt.Size() {
-		t.Skip("test zips too close in size for deterministic selection")
 	}
 	publish(t, dir, mm, id, priv)
 

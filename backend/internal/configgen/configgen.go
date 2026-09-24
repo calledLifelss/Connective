@@ -12,6 +12,7 @@ package configgen
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"connective/backend/internal/servers"
@@ -49,6 +50,12 @@ type Options struct {
 	// the core's own server-bound sockets re-enter its TUN and loop
 	// forever (observed as hung handshakes in the netns e2e).
 	ExcludeAddrs []string
+	// SplitMode/SplitApps implement per-app split tunneling via
+	// process_name route rules (see routeConfig). SplitMode is
+	// "off"|"bypass"|"only"; SplitApps are normalized exe basenames.
+	// Applied on next connect; process matching needs the TUN inbound.
+	SplitMode string
+	SplitApps []string
 }
 
 // DefaultOptions returns standard desktop options.
@@ -64,7 +71,7 @@ func Generate(s *servers.Server, opts Options) ([]byte, error) {
 	}
 	cfg := baseConfig(opts)
 	cfg["outbounds"] = append([]any{outbound}, systemOutbounds()...)
-	cfg["route"] = routeConfig(opts.Mode, "proxy")
+	cfg["route"] = routeConfig(opts.Mode, "proxy", opts.SplitMode, opts.SplitApps)
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
@@ -126,7 +133,7 @@ func GenerateGroup(list []*servers.Server, defaultTag string, opts Options) ([]b
 	outbounds = append(outbounds, systemOutbounds()...)
 	cfg := baseConfig(opts)
 	cfg["outbounds"] = outbounds
-	cfg["route"] = routeConfig(opts.Mode, ProxyTag)
+	cfg["route"] = routeConfig(opts.Mode, ProxyTag, opts.SplitMode, opts.SplitApps)
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
@@ -308,12 +315,39 @@ func dnsConfig() map[string]any {
 	}
 }
 
-func routeConfig(mode Mode, final string) map[string]any {
-	rules := []any{
+func routeConfig(mode Mode, final string, splitMode string, splitApps []string) map[string]any {
+	apps := cleanSplitApps(splitApps)
+	rules := []any{}
+	// Per-app split rules win over everything below: a bypassed app's
+	// traffic (including its DNS) must not hit the proxy intercepts.
+	switch splitMode {
+	case "bypass":
+		if len(apps) > 0 {
+			rules = append(rules, map[string]any{
+				"process_name": apps,
+				"action":       "route",
+				"outbound":     "direct",
+			})
+		}
+	case "only":
+		if len(apps) > 0 {
+			if final == "" {
+				final = "proxy"
+			}
+			rules = append(rules, map[string]any{
+				"process_name": apps,
+				"action":       "route",
+				"outbound":     final,
+			})
+			// Default flips: everything NOT listed goes direct.
+			final = "direct"
+		}
+	}
+	rules = append(rules,
 		map[string]any{"action": "sniff"},
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 		map[string]any{"ip_is_private": true, "action": "route", "outbound": "direct"},
-	}
+	)
 	if final == "" {
 		final = "proxy"
 	}
@@ -325,6 +359,22 @@ func routeConfig(mode Mode, final string) map[string]any {
 		"auto_detect_interface":   true,
 		"default_domain_resolver": "local-dns",
 	}
+}
+
+// cleanSplitApps normalizes process names for the core: trimmed,
+// non-empty, capped (defense in depth — settings already normalizes).
+func cleanSplitApps(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		out = append(out, s)
+		if len(out) >= 200 {
+			break
+		}
+	}
+	return out
 }
 
 func firstNonEmpty(vals ...string) string {

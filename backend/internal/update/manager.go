@@ -534,15 +534,21 @@ func (m *Manager) Install(ctx context.Context) Status {
 	if applier == nil {
 		applier = ZipOverlayApplier{}
 	}
+	// Snapshot shared pointers/paths under lock: the mutex is released
+	// for the slow assemble/fetch below, and Check/Download/Cancel must
+	// never mutate pending mid-install (guarded by state), but copying
+	// avoids any future race if guards change.
+	pending := m.pending
+	staged := m.staged
 	m.mu.Unlock()
-	dir, aerr := installer.Assemble(ctx, ver, m.staged, kind, applier)
+	dir, aerr := installer.Assemble(ctx, ver, staged, kind, applier)
 	if aerr != nil && kind == ArtifactDelta {
 		// Delta inapplicable (no current tree, corrupt patch, …):
 		// fall back to the full artifact instead of failing.
 		if m.log() != nil {
 			m.log().Warn("update: delta unusable (%v), falling back to full", aerr)
 		}
-		if full := fullArtifactOf(m.pending); full != nil {
+		if full := fullArtifactOf(pending); full != nil {
 			if fpath, ferr := m.fetchVerified(ctx, m.downloader(), *full); ferr == nil {
 				m.mu.Lock()
 				m.staged = fpath

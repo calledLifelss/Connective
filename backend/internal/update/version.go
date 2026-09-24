@@ -12,7 +12,7 @@ import (
 
 // CurrentVersion is the running application's version. Release tooling
 // must keep this in lockstep with the Flutter pubspec and RPM spec.
-const CurrentVersion = "0.4.0"
+const CurrentVersion = "0.5.0"
 
 // Channels supported by update queries. The UI exposes the setting;
 // the backend already filters on it.

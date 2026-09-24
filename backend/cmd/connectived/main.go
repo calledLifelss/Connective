@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"connective/backend/internal/apps"
 	"connective/backend/internal/configgen"
 	"connective/backend/internal/connection"
 	"connective/backend/internal/core"
@@ -407,6 +408,8 @@ func (d *Daemon) renderConfig(targets []*servers.Server, activeID string) ([]byt
 		URLTestInterval: time.Duration(st.URLTestIntervalMin) * time.Minute,
 		MTU:             st.MTU,
 		ExcludeAddrs:    excludes,
+		SplitMode:       st.SplitMode,
+		SplitApps:       st.SplitApps,
 	}
 	d.mu.Lock()
 	d.mu.Unlock()
@@ -1352,6 +1355,7 @@ func (d *Daemon) registerHandlers() {
 	d.ipc.Handle(ipc.MethodUpdateSubscription, d.hUpdateSubscription)
 	d.ipc.Handle(ipc.MethodRemoveSubscription, d.hRemoveSubscription)
 	d.ipc.Handle(ipc.MethodGetStats, d.hGetStats)
+	d.ipc.Handle(ipc.MethodAppsList, d.hAppsList)
 	d.ipc.Handle(ipc.MethodUIGet, d.hUIGet)
 	d.ipc.Handle(ipc.MethodUIUpdate, d.hUIUpdate)
 	d.ipc.Handle(ipc.MethodUpdateCheck, d.hUpdateCheck)
@@ -1781,6 +1785,13 @@ func (d *Daemon) hGetStats(p json.RawMessage) (any, error) {
 		"downTotal":  snap.Down - d.sessionDown,
 		"durationMs": time.Since(d.connectAt).Milliseconds(),
 	}, nil
+}
+
+// hAppsList returns distinct running programs for the split-tunnel
+// picker (read-only process inventory, most instances first). Never
+// fails: an unreadable table yields an empty list.
+func (d *Daemon) hAppsList(p json.RawMessage) (any, error) {
+	return apps.List(), nil
 }
 
 // hUIGet returns persisted UI state (collapse maps etc.).

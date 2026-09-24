@@ -20,6 +20,8 @@ class AppSettings {
   final int healthIntervalSec;
   final String updateChannel;
   final bool updateAutoCheck;
+  final String splitMode;
+  final List<String> splitApps;
 
   const AppSettings({
     this.autoConnect = false,
@@ -42,6 +44,8 @@ class AppSettings {
     this.healthIntervalSec = 30,
     this.updateChannel = 'stable',
     this.updateAutoCheck = true,
+    this.splitMode = 'off',
+    this.splitApps = const [],
   });
 
   AppSettings copyWith({
@@ -65,6 +69,8 @@ class AppSettings {
     int? healthIntervalSec,
     String? updateChannel,
     bool? updateAutoCheck,
+    String? splitMode,
+    List<String>? splitApps,
   }) =>
       AppSettings(
         autoConnect: autoConnect ?? this.autoConnect,
@@ -79,7 +85,6 @@ class AppSettings {
         theme: theme ?? this.theme,
         urlTestIntervalMin: urlTestIntervalMin ?? this.urlTestIntervalMin,
         connectionTestUrl: connectionTestUrl ?? this.connectionTestUrl,
-        clashApiPort: clashApiPort ?? this.clashApiPort,
         corePath: corePath ?? this.corePath,
         helperPath: helperPath ?? this.helperPath,
         mtu: mtu ?? this.mtu,
@@ -87,6 +92,8 @@ class AppSettings {
         healthIntervalSec: healthIntervalSec ?? this.healthIntervalSec,
         updateChannel: updateChannel ?? this.updateChannel,
         updateAutoCheck: updateAutoCheck ?? this.updateAutoCheck,
+        splitMode: splitMode ?? this.splitMode,
+        splitApps: splitApps ?? this.splitApps,
       );
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
@@ -112,6 +119,10 @@ class AppSettings {
         healthIntervalSec: (j['healthIntervalSec'] as num?)?.toInt() ?? 30,
         updateChannel: j['updateChannel'] as String? ?? 'stable',
         updateAutoCheck: j['updateAutoCheck'] as bool? ?? true,
+        splitMode: j['splitMode'] as String? ?? 'off',
+        splitApps: [
+          for (final e in (j['splitApps'] as List? ?? [])) e.toString()
+        ],
       );
 
   Map<String, dynamic> toJson() => {
@@ -135,5 +146,7 @@ class AppSettings {
         'healthIntervalSec': healthIntervalSec,
         'updateChannel': updateChannel,
         'updateAutoCheck': updateAutoCheck,
+        'splitMode': splitMode,
+        'splitApps': splitApps,
       };
 }

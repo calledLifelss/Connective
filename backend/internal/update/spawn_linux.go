@@ -21,6 +21,9 @@ func spawnUpdaterDetached(bin string, args []string, dataDir string) error {
 	name := bin
 	if isProdRoot(rootOf(args)) && !platform.IsElevated() {
 		runner := platform.HelperRunner()
+		if len(runner) == 0 {
+			return fmt.Errorf("update: start installer: empty helper runner")
+		}
 		full := append([]string{}, runner[1:]...)
 		full = append(full, bin)
 		full = append(full, args[1:]...)
