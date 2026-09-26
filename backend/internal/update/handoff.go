@@ -239,6 +239,19 @@ func friendlySpawnError(err error) string {
 	return "The installer could not be started (" + msg + "). Your current version is untouched."
 }
 
+// exitedSpawnError classifies an updater process that died on its own
+// (declined polkit/UAC prompt = "try again later", anything else = an
+// honest install failure the UI must not dress up).
+func exitedSpawnError(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "cancel") || strings.Contains(msg, "dismiss") ||
+		strings.Contains(msg, "auth") || strings.Contains(msg, "elevation") ||
+		strings.Contains(msg, "not authorized") || strings.Contains(msg, "aborted") {
+		return friendlySpawnError(err)
+	}
+	return failedSpawnError()
+}
+
 // failedSpawnError is the terminal honest message when the updater
 // itself reports failure or never reports.
 func failedSpawnError() string {

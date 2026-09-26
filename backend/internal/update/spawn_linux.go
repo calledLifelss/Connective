@@ -13,10 +13,13 @@ import (
 )
 
 // spawnUpdaterDetached launches the updater outside the daemon's
-// lifetime: double-fork semantics via Setsid + Start (no Wait), so the
-// updater survives the app closing to finish the install. Output goes
-// to updates/updater.log, never the caller's pipes.
-func spawnUpdaterDetached(bin string, args []string, dataDir string) error {
+// lifetime: double-fork semantics via Setsid + Start (no Wait by
+// default), so the updater survives the app closing to finish the
+// install. Output goes to updates/updater.log, never the caller's
+// pipes. When onExit is provided the child is reaped in a goroutine so
+// a declined pkexec/polkit prompt (exit status non-zero, immediately)
+// becomes a visible failure instead of a permanent "restarting".
+func spawnUpdaterDetached(bin string, args []string, dataDir string, onExit func(error)) error {
 	prog, progArgs := updaterCommand(bin, args)
 	if isProdRoot(rootOf(args)) && !platform.IsElevated() {
 		runner := platform.HelperRunner()
@@ -40,6 +43,12 @@ func spawnUpdaterDetached(bin string, args []string, dataDir string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("update: start installer: %w", err)
+	}
+	if onExit != nil {
+		go func() {
+			onExit(cmd.Wait())
+		}()
+		return nil
 	}
 	_ = cmd.Process.Release()
 	return nil

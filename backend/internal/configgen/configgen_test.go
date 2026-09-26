@@ -326,10 +326,49 @@ func TestSplitOnlyRoutesAppsProxyRestDirect(t *testing.T) {
 	if final != "direct" {
 		t.Fatalf("only mode flips final to direct, got %q", final)
 	}
-	first := rules[0]
-	names, _ := first["process_name"].([]any)
-	if len(names) != 1 || first["outbound"] != "proxy" {
-		t.Fatalf("bad only rule: %v", first)
+	var route, hijack map[string]any
+	for _, r := range rules {
+		if _, ok := r["process_name"]; !ok {
+			continue
+		}
+		if r["action"] == "hijack-dns" {
+			hijack = r
+		} else {
+			route = r
+		}
+	}
+	if route == nil || route["outbound"] != "proxy" {
+		t.Fatalf("missing listed-app route rule: %v", rules)
+	}
+	// B6: listed apps keep a process-scoped DNS hijack (sniff + hijack
+	// precede the route rule) and there is NO global hijack, so
+	// non-listed apps' DNS follows their direct traffic.
+	if hijack == nil {
+		t.Fatalf("only mode needs a process-scoped dns hijack: %v", rules)
+	}
+	if hijack["protocol"] != "dns" {
+		t.Fatalf("hijack must match protocol dns: %v", hijack)
+	}
+	for _, r := range rules {
+		if _, hasProc := r["process_name"]; hasProc {
+			continue
+		}
+		if r["action"] == "hijack-dns" {
+			t.Fatalf("only mode must not emit a global dns hijack: %v", r)
+		}
+	}
+	// Sniff precedes the protocol matcher.
+	sniffAt, hijackAt := -1, -1
+	for i, r := range rules {
+		if r["action"] == "sniff" && sniffAt < 0 {
+			sniffAt = i
+		}
+		if r["action"] == "hijack-dns" && r["protocol"] == "dns" {
+			hijackAt = i
+		}
+	}
+	if sniffAt < 0 || sniffAt > hijackAt {
+		t.Fatalf("sniff must precede the dns hijack (sniff=%d hijack=%d)", sniffAt, hijackAt)
 	}
 }
 
@@ -345,6 +384,140 @@ func TestSplitEmptyAppsNoChange(t *testing.T) {
 			if _, ok := r["process_name"]; ok {
 				t.Fatalf("mode %s with no apps must not emit process rules", mode)
 			}
+		}
+	}
+}
+
+// B1: routeConfig honors the mode. Rules keeps private/LAN direct;
+// Global proxies it — only loopback/link-local stay on the host.
+func TestRouteRulesKeepsPrivateDirect(t *testing.T) {
+	opts := DefaultOptions()
+	opts.Mode = ModeRules
+	final, rules := routeOf(t, opts)
+	if final != "proxy" {
+		t.Fatalf("final = %q", final)
+	}
+	found := false
+	for _, r := range rules {
+		if v, ok := r["ip_is_private"]; ok && v == true {
+			if r["outbound"] != "direct" {
+				t.Fatalf("private rule must route direct: %v", r)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("rules mode must bypass private addresses")
+	}
+	for _, r := range rules {
+		if _, ok := r["ip_cidr"]; ok {
+			t.Fatalf("rules mode must not carry the global-mode cidr rule: %v", r)
+		}
+	}
+}
+
+func TestRouteGlobalProxiesPrivateExceptLoopback(t *testing.T) {
+	opts := DefaultOptions() // ModeGlobal
+	final, rules := routeOf(t, opts)
+	if final != "proxy" {
+		t.Fatalf("final = %q", final)
+	}
+	for _, r := range rules {
+		if v, ok := r["ip_is_private"]; ok && v == true {
+			t.Fatalf("global mode must proxy private addresses: %v", r)
+		}
+	}
+	found := false
+	for _, r := range rules {
+		cidrs, ok := r["ip_cidr"].([]any)
+		if !ok {
+			continue
+		}
+		want := map[string]bool{"127.0.0.0/8": true, "::1/128": true, "fe80::/10": true}
+		for _, c := range cidrs {
+			s, _ := c.(string)
+			delete(want, s)
+		}
+		if len(want) != 0 {
+			t.Fatalf("loopback/link-local rule missing %v: %v", want, r)
+		}
+		if r["outbound"] != "direct" {
+			t.Fatalf("loopback must route direct: %v", r)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("global mode must keep loopback/link-local direct")
+	}
+}
+
+// B5: DNSMode reaches the generated config. proxy-aware/custom keep the
+// DoT-via-proxy resolver; system leaves lookups to the OS resolver.
+func TestDNSModeWiring(t *testing.T) {
+	s := mustParse(t, "trojan://pw@trojan.example.org:443#T")
+	for _, mode := range []string{"proxy-aware", "custom", ""} {
+		opts := DefaultOptions()
+		opts.DNSMode = mode
+		raw, err := Generate(s, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg struct {
+			DNS struct {
+				Servers []struct {
+					Tag string `json:"tag"`
+				} `json:"servers"`
+				Final string `json:"final"`
+			} `json:"dns"`
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.DNS.Final != "proxy-dns" {
+			t.Fatalf("mode %q: final = %q, want proxy-dns", mode, cfg.DNS.Final)
+		}
+	}
+	opts := DefaultOptions()
+	opts.DNSMode = "system"
+	raw, err := Generate(s, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		DNS struct {
+			Servers []struct {
+				Tag string `json:"tag"`
+			} `json:"servers"`
+			Final string `json:"final"`
+		} `json:"dns"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DNS.Final != "local-dns" {
+		t.Fatalf("system mode final = %q, want local-dns", cfg.DNS.Final)
+	}
+	for _, srv := range cfg.DNS.Servers {
+		if srv.Tag == "proxy-dns" {
+			t.Fatalf("system mode must not configure a tunnel resolver: %+v", cfg.DNS.Servers)
+		}
+	}
+}
+
+// Split rules still win in both modes: a bypassed app's LAN traffic
+// never reaches the proxy rules below it.
+func TestSplitBypassPrecedesModeRule(t *testing.T) {
+	for _, mode := range []Mode{ModeGlobal, ModeRules} {
+		opts := DefaultOptions()
+		opts.Mode = mode
+		opts.SplitMode = "bypass"
+		opts.SplitApps = []string{"firefox"}
+		_, rules := routeOf(t, opts)
+		if len(rules) == 0 {
+			t.Fatal("no rules")
+		}
+		if _, ok := rules[0]["process_name"]; !ok {
+			t.Fatalf("%s: split rule must come first: %v", mode, rules[0])
 		}
 	}
 }

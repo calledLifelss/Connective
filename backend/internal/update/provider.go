@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -43,10 +44,11 @@ func (e *noUpdate) Error() string { return "update: no update: " + e.reason }
 // ErrNoUpdate builds the sentinel; IsNoUpdate tests for it.
 func ErrNoUpdate(reason string) error { return &noUpdate{reason: reason} }
 
-// IsNoUpdate reports whether err is the no-update sentinel.
+// IsNoUpdate reports whether err is the no-update sentinel (tolerates
+// wrapping: releaseFrom annotates its errors with the tag name).
 func IsNoUpdate(err error) bool {
-	_, ok := err.(*noUpdate)
-	return ok
+	var e *noUpdate
+	return errors.As(err, &e)
 }
 
 // OpenArtifactFunc adapts OpenArtifact implementations that only need

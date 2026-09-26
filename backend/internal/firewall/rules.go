@@ -2,6 +2,8 @@ package firewall
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 )
 
@@ -41,6 +43,17 @@ func BuildAllowRules(allows []string) ([]AllowRule, error) {
 		if !ok {
 			return nil, fmt.Errorf("firewall: bad allow %q (want ip:port)", a)
 		}
+		// Hardening: only a parseable IP and numeric port reach netsh
+		// arguments (the daemon formats them, but this runs elevated).
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
+			return nil, fmt.Errorf("firewall: bad allow %q (invalid ip)", a)
+		}
+		pnum, err := strconv.Atoi(port)
+		if err != nil || pnum < 1 || pnum > 65535 {
+			return nil, fmt.Errorf("firewall: bad allow %q (invalid port)", a)
+		}
+		ip = parsed.String()
 		for _, proto := range []string{"TCP", "UDP"} {
 			out = append(out, AllowRule{
 				Name:   "Allow " + ip + " " + port + "/" + proto,

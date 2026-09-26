@@ -21,6 +21,7 @@ class RoutingPage extends StatefulWidget {
 class _RoutingPageState extends State<RoutingPage> {
   final _addCtrl = TextEditingController();
   String _filter = '';
+  String? _addError;
 
   @override
   void initState() {
@@ -187,12 +188,18 @@ class _RoutingPageState extends State<RoutingPage> {
                             child: TextField(
                               key: const Key('split-app-add-field'),
                               controller: _addCtrl,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 hintText:
                                     'Add app by exe name (e.g. firefox)',
                                 isDense: true,
-                                border: OutlineInputBorder(),
+                                border: const OutlineInputBorder(),
+                                errorText: _addError,
                               ),
+                              onChanged: (_) {
+                                if (_addError != null) {
+                                  setState(() => _addError = null);
+                                }
+                              },
                               onSubmitted: (_) => _add(store),
                             ),
                           ),
@@ -303,8 +310,19 @@ class _RoutingPageState extends State<RoutingPage> {
   }
 
   void _add(AppStore store) {
-    final id = _addCtrl.text.trim();
-    if (id.isEmpty) return;
+    final raw = _addCtrl.text.trim();
+    if (raw.isEmpty) return;
+    // Validate client-side with the same rules as the daemon
+    // (apps.NormalizeAppID) so bad input gets an inline error instead of
+    // a bounced settings.update (B15).
+    final id = normalizeSplitAppId(raw);
+    if (id == null) {
+      setState(() => _addError =
+          'Enter an executable name like "firefox" '
+          '(letters, digits, . _ - +).');
+      return;
+    }
+    setState(() => _addError = null);
     store.addSplitApp(id);
     _addCtrl.clear();
   }

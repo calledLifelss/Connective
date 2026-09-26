@@ -61,6 +61,12 @@ type Daemon struct {
 	serverList []*servers.Server
 	sel        selection
 	upd        *update.Manager
+	// appliedKill/appliedTun record what the daemon actually enforced
+	// (kill switch table, TUN device) — never the current settings,
+	// which the user may have edited mid-session. Persisted to
+	// applied.json so an unclean shutdown is reconciled at next boot.
+	appliedKill bool
+	appliedTun  bool
 
 	connMu  sync.Mutex
 	coreMgr *core.Manager
@@ -116,9 +122,15 @@ func run() error {
 		sel:      selection{Auto: true},
 	}
 	d.loadState()
-	d.initUpdates()
-
+	// Undo kill switch/TUN state left behind by a crash before anything
+	// can connect (synchronous: no connect may race the cleanup).
+	d.reconcileApplied()
+	// The IPC server must exist before initUpdates: Manager.Init can
+	// seed a boot announcement synchronously, and OnEvent broadcasts it
+	// through d.ipc (a nil server panicked on the first boot after an
+	// update — result.json present, no recover anywhere in the daemon).
 	d.ipc = ipc.NewServer()
+	d.initUpdates()
 	d.registerHandlers()
 
 	sockPath, err := platform.SocketPath()
@@ -396,6 +408,11 @@ func (d *Daemon) renderConfig(targets []*servers.Server, activeID string) ([]byt
 	if st.RoutingMode == "rules" {
 		mode = configgen.ModeRules
 	}
+	// Split tunneling matches on process_name, which sing-box can only
+	// observe on TUN traffic: with TUN off the rules are silently dead.
+	if st.SplitMode != settings.SplitOff && !st.TunEnabled {
+		d.log.Warn("split tunneling (%s) requires TUN; per-app rules will not apply until TUN is enabled", st.SplitMode)
+	}
 	secret := randomSecret()
 	excludes := tunExcludes(targets)
 	opts := configgen.Options{
@@ -410,6 +427,7 @@ func (d *Daemon) renderConfig(targets []*servers.Server, activeID string) ([]byt
 		ExcludeAddrs:    excludes,
 		SplitMode:       st.SplitMode,
 		SplitApps:       st.SplitApps,
+		DNSMode:         st.DNSMode,
 	}
 	d.mu.Lock()
 	d.mu.Unlock()
@@ -565,6 +583,111 @@ func (d *Daemon) Disconnect(reason string) error {
 	return d.disconnect(reason)
 }
 
+// --- applied system state (kill switch / TUN) ---
+
+// appliedState is persisted to <dataDir>/applied.json. It records which
+// system mutations this daemon actually performed, so cleanup never
+// guesses from current settings and a crash is reconcilable at boot.
+type appliedState struct {
+	KillSwitch bool `json:"killSwitch"`
+	Tun        bool `json:"tun"`
+}
+
+func (d *Daemon) appliedPath() string {
+	return filepath.Join(d.dataDir, "applied.json")
+}
+
+// setApplied merges one flag change into the persisted marker. Callers
+// hold connMu (bringUp/disconnect) or run before IPC (reconcile).
+func (d *Daemon) setApplied(kill, tun bool) {
+	d.mu.Lock()
+	if kill {
+		d.appliedKill = true
+	}
+	if tun {
+		d.appliedTun = true
+	}
+	st := appliedState{KillSwitch: d.appliedKill, Tun: d.appliedTun}
+	d.mu.Unlock()
+	if !st.KillSwitch && !st.Tun {
+		os.Remove(d.appliedPath())
+		return
+	}
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(d.appliedPath(), raw, 0o600)
+}
+
+// clearApplied clears one flag after its cleanup succeeded and
+// persists the remainder (removing the marker when nothing is left).
+func (d *Daemon) clearApplied(kill, tun bool) {
+	d.mu.Lock()
+	if kill {
+		d.appliedKill = false
+	}
+	if tun {
+		d.appliedTun = false
+	}
+	st := appliedState{KillSwitch: d.appliedKill, Tun: d.appliedTun}
+	d.mu.Unlock()
+	if !st.KillSwitch && !st.Tun {
+		os.Remove(d.appliedPath())
+		return
+	}
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(d.appliedPath(), raw, 0o600)
+}
+
+// reconcileApplied undoes kill switch/TUN mutations left behind by an
+// unclean shutdown (crash, power loss): the marker file survives the
+// daemon, the nft table/TUN device may too (kernel state survives a
+// process crash; only a reboot clears it, but the marker persists
+// either way — cleanup is idempotent, so a no-op run is fine).
+// Holds connMu so no connect can race it; runs synchronously before
+// the IPC listener so nothing else exists yet. On cleanup failure the
+// marker stays so the next boot retries.
+func (d *Daemon) reconcileApplied() {
+	raw, err := os.ReadFile(d.appliedPath())
+	if err != nil {
+		return // no marker: clean state
+	}
+	var st appliedState
+	if json.Unmarshal(raw, &st) != nil {
+		os.Remove(d.appliedPath())
+		return
+	}
+	if !st.KillSwitch && !st.Tun {
+		os.Remove(d.appliedPath())
+		return
+	}
+	d.connMu.Lock()
+	defer d.connMu.Unlock()
+	d.mu.Lock()
+	d.appliedKill, d.appliedTun = st.KillSwitch, st.Tun
+	d.mu.Unlock()
+	d.log.Warn("stale system state from previous run (killSwitch=%v tun=%v), cleaning up",
+		st.KillSwitch, st.Tun)
+	if st.KillSwitch {
+		if err := d.runHelper("killswitch-off", "--state", filepath.Join(d.dataDir, "killswitch.state")); err != nil {
+			d.log.Error("startup kill switch cleanup: %v (will retry next boot)", err)
+		} else {
+			d.clearApplied(true, false)
+		}
+	}
+	if st.Tun {
+		if err := d.runHelper("tun-cleanup", "--if", "connective0"); err != nil {
+			d.log.Error("startup TUN cleanup: %v (will retry next boot)", err)
+		} else {
+			d.clearApplied(false, true)
+		}
+	}
+}
+
 func (d *Daemon) disconnect(reason string) error {
 	st := d.machine.State()
 	if st == connection.StDisconnected {
@@ -576,38 +699,48 @@ func (d *Daemon) disconnect(reason string) error {
 		d.log.Warn("disconnect from %s: forcing cleanup", st)
 		d.stopMonitors()
 		d.stopCore()
-		d.mu.Lock()
-		kill := d.settings.KillSwitch
-		tun := d.settings.TunEnabled
-		d.mu.Unlock()
-		if kill {
-			_ = d.runHelper("killswitch-off", "--state", filepath.Join(d.dataDir, "killswitch.state"))
-		}
-		if tun {
-			_ = d.runHelper("tun-cleanup", "--if", "connective0")
-		}
+		d.cleanupApplied()
 		d.machine.Reset(reason)
 		return nil
 	}
 	_ = d.machine.Transition(connection.StDisconnecting, reason)
 	d.stopMonitors()
 	d.stopCore()
-	d.mu.Lock()
-	kill := d.settings.KillSwitch
-	tun := d.settings.TunEnabled
-	d.mu.Unlock()
-	if kill {
-		_ = d.runHelper("killswitch-off", "--state", filepath.Join(d.dataDir, "killswitch.state"))
-	}
-	if tun {
-		_ = d.runHelper("tun-cleanup", "--if", "connective0")
-	}
+	d.cleanupApplied()
 	if h, err := dns.ResolverSnapshot(); err == nil && d.resolvHash != "" && h != d.resolvHash {
 		d.log.Warn("system resolver changed during session (before=%s after=%s)", d.resolvHash, h)
 	}
 	_ = d.machine.Transition(connection.StDisconnected, reason)
 	d.log.Info("disconnected")
 	return nil
+}
+
+// cleanupApplied tears down whatever this daemon actually applied (kill
+// switch table, TUN device) and clears each persisted flag only after
+// its helper run succeeds, so a failed teardown is retried (by the next
+// disconnect or, if the daemon dies first, at next boot via
+// reconcileApplied). Uses the applied markers, not current settings:
+// the user may have toggled killSwitch/TunEnabled mid-session and the
+// old rules/device would otherwise leak.
+func (d *Daemon) cleanupApplied() {
+	d.mu.Lock()
+	kill := d.appliedKill
+	tun := d.appliedTun
+	d.mu.Unlock()
+	if kill {
+		if err := d.runHelper("killswitch-off", "--state", filepath.Join(d.dataDir, "killswitch.state")); err != nil {
+			d.log.Error("kill switch cleanup: %v", err)
+		} else {
+			d.clearApplied(true, false)
+		}
+	}
+	if tun {
+		if err := d.runHelper("tun-cleanup", "--if", "connective0"); err != nil {
+			d.log.Error("TUN cleanup: %v", err)
+		} else {
+			d.clearApplied(false, true)
+		}
+	}
 }
 
 // bringUp starts the core for an already-written config and enforces the
@@ -626,6 +759,11 @@ func (d *Daemon) bringUp(targets []*servers.Server, pick *servers.Server, cfgPat
 	d.clash = stats.New(clashPort, clashSecret)
 	d.tracker = stats.NewTracker(d.clash)
 	d.lastTargets = targets
+	if st.TunEnabled {
+		// Record before verification: the core may create the device
+		// even if verifyTUN later fails, and cleanup must know.
+		d.setApplied(false, true)
+	}
 
 	_ = d.machine.Transition(connection.StInitializingTUN, "")
 	if st.TunEnabled {
@@ -642,6 +780,9 @@ func (d *Daemon) bringUp(targets []*servers.Server, pick *servers.Server, cfgPat
 		return err
 	}
 	if st.KillSwitch {
+		// Mark before applying so a partial apply (helper fails
+		// mid-way) is still cleaned up by the StError disconnect path.
+		d.setApplied(true, false)
 		if err := d.applyKillSwitch(targets); err != nil {
 			d.stopCore()
 			_ = d.machine.Transition(connection.StError, err.Error())
@@ -695,9 +836,8 @@ func (d *Daemon) applyKillSwitch(targets []*servers.Server) error {
 			continue
 		}
 		for _, ip := range ips {
-			if ip.To4() == nil {
-				continue // nft set is IPv4-egress focused (see helper)
-			}
+			// Both families: an IPv6-only endpoint would otherwise get
+			// no allow rule and the kill switch would block the tunnel.
 			key := ip.String() + ":" + fmt.Sprint(s.Port)
 			if !seen[key] {
 				seen[key] = true
@@ -1121,6 +1261,8 @@ func tunExcludes(targets []*servers.Server) []string {
 		for _, ip := range ips {
 			if v4 := ip.To4(); v4 != nil {
 				add(v4.String() + "/32")
+			} else {
+				add(ip.String() + "/128")
 			}
 		}
 	}
@@ -1397,6 +1539,17 @@ func (d *Daemon) hUpdateSettings(p json.RawMessage) (any, error) {
 	if err := json.Unmarshal(p, &s); err != nil {
 		return nil, fmt.Errorf("bad settings: %w", err)
 	}
+	// Conflict must run before Validate: Validate would silently
+	// resolve the combination and the user would never learn why their
+	// split apps stopped working.
+	if err := s.Conflict(); err != nil {
+		return nil, err
+	}
+	// Split-app input errors surface before Validate (which would
+	// silently drop/truncate them and pretend the update succeeded).
+	if err := checkSplitApps(s.SplitApps); err != nil {
+		return nil, err
+	}
 	s.Validate()
 	d.mu.Lock()
 	d.settings = s
@@ -1405,6 +1558,23 @@ func (d *Daemon) hUpdateSettings(p json.RawMessage) (any, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// checkSplitApps rejects split-tunnel lists the UI should not have sent:
+// more than MaxSplitApps entries, or entries that normalize to nothing
+// (invalid manual entry — Validate would silently drop them and the
+// caller would think they were saved).
+func checkSplitApps(list []string) error {
+	if len(list) > settings.MaxSplitApps {
+		return fmt.Errorf("split app list exceeds %d apps (got %d); remove some first",
+			settings.MaxSplitApps, len(list))
+	}
+	for _, e := range list {
+		if apps.NormalizeAppID(e) == "" {
+			return fmt.Errorf("invalid app entry %q (expected an executable name like \"firefox\")", e)
+		}
+	}
+	return nil
 }
 
 func (d *Daemon) hGetLogs(p json.RawMessage) (any, error) {

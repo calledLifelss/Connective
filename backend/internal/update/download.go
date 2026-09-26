@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -39,7 +40,21 @@ func (d *Downloader) client() *http.Client {
 	if d.Client != nil {
 		return d.Client
 	}
-	return &http.Client{Timeout: 5 * time.Minute}
+	// No absolute client timeout: it used to bound the WHOLE body read,
+	// so a slow link could never finish a large artifact in one attempt
+	// (three tries ≈ 15 minutes ceiling regardless of ctx). Stalls are
+	// still bounded — connect/TLS/header timeouts below plus the
+	// caller's context (the IPC handlers give downloads 30 minutes).
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
+		},
+	}
 }
 
 func (d *Downloader) maxBytes() int64 {
@@ -129,18 +144,17 @@ func (d *Downloader) attempt(ctx context.Context, u *url.URL, tmp *os.File, have
 			return 0, 0, "", fmt.Errorf("update: missing asset: %w", err)
 		}
 		defer f.Close()
-		if have > 0 {
-			if _, err := f.Seek(have, io.SeekStart); err != nil {
-				return 0, 0, "", err
-			}
-		}
 		if total <= 0 {
 			if st, err := f.Stat(); err == nil {
 				total = st.Size()
 			}
 		}
 		src = io.NopCloser(f)
-		// file assets are local: hash from scratch each attempt.
+		// file assets are local: hash from scratch each attempt. The
+		// temp file is truncated FIRST and the source re-read from the
+		// start — the old code sought the source to `have` and then
+		// truncated the temp file to zero, so every retry wrote the
+		// tail of the file at offset 0 and died with "short download".
 		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 			return 0, 0, "", err
 		}
@@ -209,7 +223,6 @@ func (d *Downloader) attempt(ctx context.Context, u *url.URL, tmp *os.File, have
 		return 0, 0, "", err
 	}
 	done := have
-	start := time.Now()
 	buf := make([]byte, 64*1024)
 	for {
 		select {
@@ -227,12 +240,8 @@ func (d *Downloader) attempt(ctx context.Context, u *url.URL, tmp *os.File, have
 			}
 			h.Write(buf[:n])
 			done += int64(n)
-			if d.OnProgress != nil {
-				elapsed := time.Since(start).Seconds()
-				_ = elapsed
-				if !d.OnProgress(done, total) {
-					return done, total, "", context.Canceled
-				}
+			if d.OnProgress != nil && !d.OnProgress(done, total) {
+				return done, total, "", context.Canceled
 			}
 		}
 		if rerr == io.EOF {

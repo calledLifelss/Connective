@@ -315,17 +315,41 @@ func genDelta(args []string) error {
 	if len(changed) == 0 {
 		return fmt.Errorf("no differences between trees")
 	}
+	// Every file of the TARGET tree travels with the delta: the applier
+	// uses it to drop files the new version deleted. Without it a
+	// copy-and-overlay delta keeps stale files alive, which the delta
+	// contract (a full, verified installation) forbids.
+	all, err := listTreeFiles(*to)
+	if err != nil {
+		return err
+	}
 	f, err := os.Create(*out)
 	if err != nil {
 		return err
 	}
 	zw := zip.NewWriter(f)
+	lw, err := zw.Create(update.DeltaListingName)
+	if err != nil {
+		return err
+	}
+	if _, err := lw.Write([]byte(strings.Join(all, "\n"))); err != nil {
+		return err
+	}
 	for _, rel := range changed {
-		data, err := os.ReadFile(filepath.Join(*to, rel))
+		path := filepath.Join(*to, rel)
+		info, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
-		w, err := zw.Create(rel)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		// Record the real mode: extraction honors it (data files must
+		// not become world-executable, binaries must keep +x).
+		fh := &zip.FileHeader{Name: rel, Method: zip.Deflate}
+		fh.SetMode(info.Mode())
+		w, err := zw.CreateHeader(fh)
 		if err != nil {
 			return err
 		}
@@ -345,6 +369,24 @@ func genDelta(args []string) error {
 	}
 	fmt.Printf("delta %s (%d files, %d bytes, sha256 %s)\n", *out, len(changed), size, sum[:16])
 	return nil
+}
+
+// listTreeFiles walks to/ and returns every file path (slash
+// separated, relative) — the delta's target-tree listing.
+func listTreeFiles(to string) ([]string, error) {
+	var out []string
+	err := filepath.Walk(to, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(to, path)
+		if err != nil {
+			return err
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	return out, err
 }
 
 // diffTrees lists files under to/ that are new or differ from from/.

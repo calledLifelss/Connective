@@ -4,7 +4,11 @@
 // versions forward-tolerate newer documents.
 package settings
 
-import "strings"
+import (
+	"fmt"
+
+	"connective/backend/internal/apps"
+)
 
 // Settings is the full application configuration.
 type Settings struct {
@@ -80,6 +84,18 @@ func Defaults() Settings {
 	}
 }
 
+// Conflict reports settings combinations the daemon must reject instead
+// of silently normalizing: a kill switch blocks all non-tunnel egress,
+// so split-tunneled (direct) apps could never reach the network. The
+// settings.update handler checks this BEFORE Validate (which resolves
+// legacy combinations on load).
+func (s Settings) Conflict() error {
+	if s.KillSwitch && s.SplitMode != "" && s.SplitMode != SplitOff {
+		return fmt.Errorf("kill switch blocks non-tunnel egress and conflicts with split tunneling; turn off split tunneling or the kill switch first")
+	}
+	return nil
+}
+
 // Validate fixes out-of-range values in place.
 func (s *Settings) Validate() {
 	if s.MixedPort < 0 || s.MixedPort > 65535 {
@@ -129,54 +145,11 @@ func (s *Settings) Validate() {
 	default:
 		s.SplitMode = SplitOff
 	}
-	s.SplitApps = normalizeAppList(s.SplitApps)
-}
-
-// normalizeAppList canonicalizes per-app entries without importing the
-// apps package (settings stays dependency-free): basename, lowercase,
-// ".exe" stripped, charset-checked, deduped, capped.
-func normalizeAppList(in []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		id := normalizeAppID(s)
-		if id == "" || seen[id] {
-			continue
-		}
-		seen[id] = true
-		out = append(out, id)
-		if len(out) >= MaxSplitApps {
-			break
-		}
+	// Auto-resolve legacy/foreign combinations (e.g. an older document
+	// written before the conflict existed): split tunneling loses, the
+	// kill switch is the stronger guarantee.
+	if s.KillSwitch && s.SplitMode != SplitOff {
+		s.SplitMode = SplitOff
 	}
-	if out == nil {
-		return []string{}
-	}
-	return out
-}
-
-func normalizeAppID(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	s = strings.ReplaceAll(s, "\\", "/")
-	if i := strings.LastIndex(s, "/"); i >= 0 {
-		s = s[i+1:]
-	}
-	s = strings.TrimSpace(s)
-	if s == "" || s == "." || s == "/" {
-		return ""
-	}
-	s = strings.ToLower(s)
-	s = strings.TrimSuffix(s, ".exe")
-	if s == "" || len(s) > 128 {
-		return ""
-	}
-	for _, c := range s {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' || c == '+') {
-			return ""
-		}
-	}
-	return s
+	s.SplitApps = apps.NormalizeList(s.SplitApps, MaxSplitApps)
 }

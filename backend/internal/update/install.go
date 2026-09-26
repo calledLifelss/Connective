@@ -37,6 +37,15 @@ type Installer struct {
 	Root string
 	// HealthTimeout bounds the new version's startup signal.
 	HealthTimeout time.Duration
+	// DeltaBase is the install root the delta overlay reads its base
+	// tree from, when that differs from Root (production assembles in
+	// a stage root that has no `current` link of its own). Empty =
+	// use Root.
+	DeltaBase string
+	// DeltaFrom is the version the delta was built from; a base tree
+	// at any other version must never be overlaid (the result would
+	// be neither version). Empty = no check.
+	DeltaFrom string
 }
 
 func (in *Installer) healthTimeout() time.Duration {
@@ -91,16 +100,26 @@ func (in *Installer) Assemble(ctx context.Context, target string, stagedArtifact
 	build := filepath.Join(staging, "tree")
 	switch kind {
 	case ArtifactFull:
-		if err := unzipAll(stagedArtifact, build); err != nil {
+		if err := unzipAll(ctx, stagedArtifact, build); err != nil {
 			return "", err
 		}
 	case ArtifactDelta:
-		curTree, cerr := os.Readlink(in.currentLink())
+		baseRoot := in.Root
+		if in.DeltaBase != "" {
+			baseRoot = in.DeltaBase
+		}
+		curTree, cerr := os.Readlink(filepath.Join(baseRoot, "current"))
 		if cerr != nil {
 			return "", fmt.Errorf("update: delta needs a current install: %w", cerr)
 		}
 		if !filepath.IsAbs(curTree) {
-			curTree = filepath.Join(in.Root, curTree)
+			curTree = filepath.Join(baseRoot, curTree)
+		}
+		// Overlaying the wrong base silently yields a hybrid tree;
+		// refuse and let the caller fall back to the full artifact.
+		if in.DeltaFrom != "" && filepath.Base(filepath.Clean(curTree)) != in.DeltaFrom {
+			return "", fmt.Errorf("update: delta base %s != installed %s",
+				in.DeltaFrom, filepath.Base(filepath.Clean(curTree)))
 		}
 		if applier == nil {
 			applier = ZipOverlayApplier{}
@@ -251,7 +270,7 @@ func (in *Installer) AwaitHealthy(ctx context.Context, ready func() bool) error 
 	}
 }
 
-func unzipAll(src, dst string) error {
+func unzipAll(ctx context.Context, src, dst string) error {
 	// Reuse the delta overlay machinery with an empty base.
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
@@ -264,6 +283,11 @@ func unzipAll(src, dst string) error {
 	strip := zipTopPrefix(z.File)
 	budget := newUnzipBudget()
 	for _, f := range z.File {
+		// Per-member cancellation: a large artifact must abandon
+		// promptly when the user cancels, not after the last entry.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := unzipOneStripBudgeted(f, dst, strip, budget); err != nil {
 			return err
 		}

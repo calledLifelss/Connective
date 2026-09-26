@@ -23,7 +23,7 @@ func TestInstallHandoffSpawnsUpdater(t *testing.T) {
 	}
 	var gotBin string
 	var gotArgs []string
-	m.Spawn = func(bin string, args []string, dd string) error {
+	m.Spawn = func(bin string, args []string, dd string, onExit func(error)) error {
 		gotBin, gotArgs = bin, args
 		if dd != dataDir {
 			t.Fatalf("spawn datadir = %q", dd)
@@ -113,7 +113,7 @@ func TestCancelFromRestarting(t *testing.T) {
 	}
 	m.DaemonExe = fakeDaemon
 	var joined string
-	m.Spawn = func(bin string, args []string, dd string) error {
+	m.Spawn = func(bin string, args []string, dd string, onExit func(error)) error {
 		for _, a := range args {
 			joined += a + " "
 		}

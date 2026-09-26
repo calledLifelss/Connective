@@ -122,10 +122,16 @@ jobs:
           echo "STABLE_TAG=$STABLE" >> "$GITHUB_ENV"
           echo "STABLE_VER=${STABLE#v}" >> "$GITHUB_ENV"
           mkdir -p /tmp/upd/base-dl /tmp/upd/base
-          gh release download "$STABLE" --pattern "full-*.zip" --dir /tmp/upd/base-dl
-          STABLE_ZIP="$(echo /tmp/upd/base-dl/full-*.zip | head -n1)"
+          # Exact Linux asset only: "full-*.zip" also matches the
+          # Windows sidecar (full-X.Y.Z-windows-x64.zip sorts first)
+          # and head -n1 would silently delta against the wrong tree.
+          STABLE_VER="${STABLE#v}"
+          gh release download "$STABLE" --pattern "full-$STABLE_VER.zip" --dir /tmp/upd/base-dl
+          STABLE_ZIP="/tmp/upd/base-dl/full-$STABLE_VER.zip"
+          test -f "$STABLE_ZIP" || { echo "missing base asset: $STABLE_ZIP"; exit 1; }
           (cd /tmp/upd/base && unzip -qo "$STABLE_ZIP")
           BASEDIR="$(echo /tmp/upd/base/*/ | head -n1)"
+          test -d "$BASEDIR" || { echo "base tree not found after unzip"; exit 1; }
           (cd backend && go run ./cmd/update-tool delta \
             --from "$BASEDIR" --to "/tmp/upd/versions/$VER" \
             --out "/tmp/upd/delta-$VER.zip")
@@ -140,6 +146,18 @@ jobs:
           test -n "$UPDATE_KEY_ID" || { echo "missing UPDATE_KEY_ID secret"; exit 1; }
           printf '%s' "$UPDATE_SIGNING_KEY" > /tmp/op.key && chmod 600 /tmp/op.key
           CH="stable"; case "$VER" in *-*) CH="beta";; esac
+          # Notes for the GitHub body and the in-app update dialog come
+          # from the "What's new" bullets of the matching release-notes
+          # file (single-line bullets, ';' is the separator).
+          NOTES=()
+          NF="docs/RELEASE_NOTES_v$VER.md"
+          if [ -f "$NF" ]; then
+            N="$(awk '/^## /{insec = ($0 ~ /^## What.s new/)}
+                      insec && /^- /{sub(/^- /,""); printf "%s;", $0}' "$NF")"
+            N="${N%;}"
+            [ -n "$N" ] && NOTES=(--notes "$N")
+          fi
+          echo "release notes: ${N:-<none — generic body>}"
           ARTS=( "full:/tmp/upd/full-$VER.zip" )
           if [ -f "/tmp/upd/delta-$VER.zip" ]; then
             ARTS+=( "delta:/tmp/upd/delta-$VER.zip:${STABLE_VER:?delta base unknown}" )
@@ -147,7 +165,7 @@ jobs:
           (cd backend && go run ./cmd/update-tool manifest --version "$VER" \
             --channel "$CH" --platform linux --arch x86_64 --min-version 0.2.0 \
             --asset-base "https://github.com/calledLifelss/Connective/releases/download/${GITHUB_REF_NAME}" \
-            --out /tmp/upd/update-manifest.json "${ARTS[@]}")
+            --out /tmp/upd/update-manifest.json "${NOTES[@]}" "${ARTS[@]}")
           (cd backend && go run ./cmd/update-tool sign \
             --manifest /tmp/upd/update-manifest.json \
             --private /tmp/op.key --key-id "$UPDATE_KEY_ID" \
@@ -155,10 +173,11 @@ jobs:
           (cd backend && go run ./cmd/update-tool verify \
             --manifest /tmp/upd/update-manifest.json \
             --keys ../packaging/update-pubkeys.json)
-          python3 - ../packaging/update-pubkeys.json << 'EOF'
-          import json, sys, hashlib
+          VER="$VER" python3 - ../packaging/update-pubkeys.json << 'EOF'
+          import json, sys, hashlib, os
           man = json.load(open('/tmp/upd/update-manifest.json'))
-          assert man['manifest']['version'] == __import__('os').environ.get('VER', man['manifest']['version'])
+          ver = os.environ['VER']
+          assert man['manifest']['version'] == ver, (man['manifest']['version'], ver)
           for a in man['manifest']['artifacts']:
               p = '/tmp/upd/' + a['filename']
               h = hashlib.sha256(open(p, 'rb').read()).hexdigest()

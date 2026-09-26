@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,10 +53,11 @@ func (e *RateLimitError) Error() string {
 		e.Reset.Format(time.RFC3339))
 }
 
-// IsRateLimit reports whether err is throttling.
+// IsRateLimit reports whether err is throttling (wrapped errors
+// included — callers annotate with %w).
 func IsRateLimit(err error) bool {
-	_, ok := err.(*RateLimitError)
-	return ok
+	var e *RateLimitError
+	return errors.As(err, &e)
 }
 
 func (p GitHubProvider) apiBase() string {
@@ -111,6 +113,7 @@ func (p GitHubProvider) Check(ctx context.Context, q Query) (*Release, error) {
 		return nil, err
 	}
 	var skipped []string
+	var hardErrs []error
 	for _, r := range rels {
 		if r.Draft {
 			continue
@@ -129,16 +132,31 @@ func (p GitHubProvider) Check(ctx context.Context, q Query) (*Release, error) {
 		}
 		rel, rerr := p.releaseFrom(ctx, r, q)
 		if rerr != nil {
+			// One broken or unreachable release must not block every
+			// check forever: skip it and keep looking (an older but
+			// still applicable release beats a permanent StateFailed
+			// for every user until the newest release is fixed).
 			if IsNoUpdate(rerr) {
 				skipped = append(skipped, r.TagName+" ("+rerr.Error()+")")
 				continue
 			}
-			return nil, rerr
+			if IsRateLimit(rerr) || ctx.Err() != nil {
+				return nil, rerr // throttling/cancel: no point scanning on
+			}
+			hardErrs = append(hardErrs, rerr)
+			skipped = append(skipped, r.TagName+" ("+rerr.Error()+")")
+			continue
 		}
 		return rel, nil
 	}
 	if len(rels) == 0 {
 		return nil, ErrNoUpdate("no releases published")
+	}
+	// Everything that could have served this query failed outright:
+	// surface the failure (it still backs off) instead of claiming the
+	// user is up to date. Any benign skip means "no applicable release".
+	if len(hardErrs) > 0 && len(hardErrs) == len(skipped) {
+		return nil, hardErrs[0]
 	}
 	reason := "no applicable release"
 	if len(skipped) > 0 {

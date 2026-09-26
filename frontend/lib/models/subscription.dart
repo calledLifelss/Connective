@@ -47,6 +47,40 @@ class TrafficInfo {
   /// "118 GB / 120 GB" label drawn centered on the traffic bar.
   String usageLabel() => '${_gb(usedBytes)} / ${_gb(total)}';
 
+  /// "2 GB / 21 GB used" label for the compact account summary.
+  String usageShort() {
+    if (hasLimit && total > 0) return '${_gb(usedBytes)} / ${_gb(total)} used';
+    if (upload + download > 0) return '${_gb(usedBytes)} used';
+    return '';
+  }
+
+  /// "Expires Oct 21, 2026" or empty when unknown.
+  String expiryLong() {
+    if (!hasExp || expire == null) return '';
+    final e = expire!;
+    return 'Expires ${_mon(e.month)} ${e.day}, ${e.year}';
+  }
+
+  static String _mon(int m) {
+    const names = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    if (m < 1 || m > 12) return '';
+    return names[m];
+  }
+
   /// "Expires 23.09.2026" or empty when unknown.
   String expiryLabel() {
     if (!hasExp || expire == null) return '';

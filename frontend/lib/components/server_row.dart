@@ -5,11 +5,16 @@ import '../models/server.dart';
 import '../state/app_store.dart';
 import '../theme/connective_theme.dart';
 import '../utils/country.dart';
+import '../widgets/common.dart';
 import 'server_dialogs.dart';
 
 /// One server row: flag + name + protocol line + latency, with an
-/// inline expandable detail section. Typography and spacing carry
-/// the hierarchy — no colorful pills.
+/// inline expandable detail section. Hierarchy is carried by
+/// typography, spacing and separators — not nested cards.
+///
+/// Priority (left → right): favorite star, flag, selection radio,
+/// name + protocol, latency, health, expand chevron. Secondary info
+/// (protocol, subscription, diagnostics) stays muted.
 ///
 /// The leading radio selects the server for the next Connect press
 /// (backend `servers.select`, no connection started). The expanded
@@ -17,8 +22,13 @@ import 'server_dialogs.dart';
 class ServerRow extends StatelessWidget {
   final AppStore store;
   final Server server;
+  final String? subscriptionName;
 
-  const ServerRow({super.key, required this.store, required this.server});
+  const ServerRow(
+      {super.key,
+      required this.store,
+      required this.server,
+      this.subscriptionName});
 
   @override
   Widget build(BuildContext context) {
@@ -33,56 +43,109 @@ class ServerRow extends StatelessWidget {
             store.selectedServerId == server.id;
         final code = countryCodeOf(
             country: server.country, displayName: server.displayName);
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-                ConnectiveTheme.radius),
-            side: BorderSide(
-              color: isSelected
-                  ? ConnectiveTheme.success
-                      .withValues(alpha: 0.5)
-                  : ConnectiveTheme.border,
-              width: 1,
-            ),
+        final highlighted = isActive || isSelected;
+
+        // Rounded wash + separate accent bar + hairline: a
+        // two-tone Border with borderRadius is rejected by the
+        // framework at paint time ("borders with uniform colors"),
+        // so each element is drawn independently.
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          decoration: BoxDecoration(
+            color: isActive
+                ? ConnectiveTheme.success.withValues(alpha: 0.07)
+                : isSelected
+                    ? ConnectiveTheme.success.withValues(alpha: 0.04)
+                    : Colors.transparent,
+            borderRadius:
+                BorderRadius.circular(ConnectiveTheme.radiusSmall),
           ),
-          color: null,
           child: InkWell(
             borderRadius:
-                BorderRadius.circular(ConnectiveTheme.radius),
+                BorderRadius.circular(ConnectiveTheme.radiusSmall),
             onTap: () => store.toggleServer(server.id),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CountryFlag(code: code, width: 22, height: 16),
-                      const SizedBox(width: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    if (highlighted)
+                      Positioned(
+                        left: 0,
+                        top: 8,
+                        bottom: 8,
+                        width: 2,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: ConnectiveTheme.success,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 9),
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.center,
+                            children: [
+                      // Favorite: subtle star, never dominates the row.
+                      SizedBox(
+                        width: 30,
+                        height: 32,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 30, minHeight: 32),
+                          icon: Icon(
+                            server.favorite
+                                ? Icons.star
+                                : Icons.star_border,
+                            size: 16,
+                            color: server.favorite
+                                ? ConnectiveTheme.warning
+                                : ConnectiveTheme.textMuted,
+                          ),
+                          tooltip: server.favorite
+                              ? 'Remove from favorites'
+                              : 'Mark as favorite',
+                          onPressed: () =>
+                              store.toggleFavorite(server.id),
+                        ),
+                      ),
+                      CountryFlag(code: code, width: 24, height: 17),
                       // Manual selection control: obvious, keyboard
                       // accessible, never starts a connection by itself.
-                      IconButton(
-                        icon: Icon(
-                          isSelected
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                          size: 18,
-                          color: isSelected
-                              ? ConnectiveTheme.success
-                              : ConnectiveTheme.textMuted,
+                      SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            isSelected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 17,
+                            color: isSelected
+                                ? ConnectiveTheme.success
+                                : ConnectiveTheme.textMuted,
+                          ),
+                          tooltip: isSelected
+                              ? 'Selected for connection'
+                              : 'Select for connection',
+                          onPressed: () => isSelected
+                              ? store.selectServer('auto')
+                              : store.selectServer(server.id),
                         ),
-                        tooltip: isSelected
-                            ? 'Selected for connection'
-                            : 'Select for connection',
-                        onPressed: () => isSelected
-                            ? store.selectServer('auto')
-                            : store.selectServer(server.id),
                       ),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Row(
                               children: [
@@ -90,87 +153,169 @@ class ServerRow extends StatelessWidget {
                                   child: Text(server.displayName,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          fontSize: 13)),
+                                          fontSize: 13.5,
+                                          height: 1.25)),
                                 ),
                                 if (isActive) ...[
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: 8),
                                   Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: const BoxDecoration(
-                                        color: ConnectiveTheme.success,
-                                        shape: BoxShape.circle),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: ConnectiveTheme.success
+                                          .withValues(alpha: 0.14),
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                      border: Border.all(
+                                          color: ConnectiveTheme.success
+                                              .withValues(alpha: 0.45)),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.check,
+                                            size: 11,
+                                            color: ConnectiveTheme
+                                                .success),
+                                        SizedBox(width: 3),
+                                        Text('CONNECTED',
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight:
+                                                    FontWeight.w700,
+                                                letterSpacing: 0.4,
+                                                color: ConnectiveTheme
+                                                    .success)),
+                                      ],
+                                    ),
                                   ),
-                                ],
-                                if (isSelected) ...[
+                                ] else if (isSelected) ...[
                                   const SizedBox(width: 8),
                                   const Text('SELECTED',
                                       style: TextStyle(
                                           fontSize: 10,
-                                          fontWeight:
-                                              FontWeight.w600,
+                                          fontWeight: FontWeight.w700,
                                           letterSpacing: 0.5,
                                           color: ConnectiveTheme
                                               .success)),
                                 ],
                               ],
                             ),
-                            const SizedBox(height: 1),
+                            const SizedBox(height: 2),
                             Text(
-                                '${server.compactInfo}  ·  ${server.health}',
+                                _subline(server, subscriptionName),
                                 style: const TextStyle(
                                     fontSize: 12,
+                                    height: 1.3,
                                     color: ConnectiveTheme
                                         .textSecondary)),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Latency: bright + tabular so it scans fast.
                       if (testing)
                         const SizedBox(
-                            width: 14,
-                            height: 14,
+                            width: 20,
+                            height: 20,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2))
                       else
-                        SizedBox(
-                          width: 64,
-                          child: Text(server.latencyLabel,
-                              textAlign: TextAlign.end,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      ConnectiveTheme.textSecondary,
-                                  fontFeatures: [
-                                    FontFeature.tabularFigures()
-                                  ])),
+                        Tooltip(
+                          message: server.latencyMs < 0
+                              ? 'Not tested yet'
+                              : 'Latency: ${server.latencyMs} ms',
+                          child: SizedBox(
+                            width: 76,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.signal_cellular_alt,
+                                    size: 13,
+                                    color: _latencyColor(server)),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(server.latencyLabel,
+                                      textAlign: TextAlign.end,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: server.latencyMs < 0
+                                              ? ConnectiveTheme
+                                                  .textMuted
+                                              : ConnectiveTheme
+                                                  .textPrimary,
+                                          fontFeatures: const [
+                                            FontFeature
+                                                .tabularFigures()
+                                          ])),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
+                      const SizedBox(width: 10),
+                      // Health: color AND icon AND text.
+                      Tooltip(
+                        message: 'Health: ${server.health}',
+                        child: HealthBadge(
+                            health: server.health, compact: true),
+                      ),
+                      const SizedBox(width: 6),
                       Icon(
                           expanded
                               ? Icons.expand_less
                               : Icons.expand_more,
                           size: 18,
                           color: ConnectiveTheme.textMuted),
-                    ],
-                  ),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 200),
-                    alignment: Alignment.topCenter,
-                    child: expanded
-                        ? _detail(context,
-                            isSelected: isSelected)
-                        : const SizedBox.shrink(),
+                            ],
+                          ),
+                          AnimatedSize(
+                            duration:
+                                const Duration(milliseconds: 200),
+                            alignment: Alignment.topCenter,
+                            child: expanded
+                                ? _detail(context,
+                                    isSelected: isSelected,
+                                    isActive: isActive)
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.only(
+                        left: 10, right: 8),
+                    color: ConnectiveTheme.borderSubtle,
                   ),
                 ],
               ),
             ),
-          ),
         );
       },
     );
   }
 
-  Widget _detail(BuildContext context, {required bool isSelected}) =>
+  static String _subline(Server s, String? subName) {
+    final parts = <String>[s.compactInfo];
+    if (subName != null && subName.isNotEmpty) parts.add(subName);
+    return parts.join('  ·  ');
+  }
+
+  static Color _latencyColor(Server s) {
+    if (s.latencyMs < 0) return ConnectiveTheme.textMuted;
+    if (s.latencyMs < 120) return ConnectiveTheme.success;
+    if (s.latencyMs < 300) return ConnectiveTheme.warning;
+    return ConnectiveTheme.textSecondary;
+  }
+
+  Widget _detail(BuildContext context,
+          {required bool isSelected, required bool isActive}) =>
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -200,12 +345,14 @@ class ServerRow extends StatelessWidget {
             runSpacing: 8,
             children: [
               FilledButton.icon(
-                onPressed: () async {
-                  await store.selectServer(server.id);
-                  await store.toggleConnection();
-                },
+                onPressed: () => store.connectToServer(server.id),
                 icon: const Icon(Icons.bolt, size: 15),
-                label: const Text('Connect'),
+                label: Text(isActive
+                    ? 'Reconnect'
+                    : ConnectionStates.isConnected(
+                            store.connectionState)
+                        ? 'Switch'
+                        : 'Connect'),
               ),
               OutlinedButton.icon(
                 onPressed: isSelected

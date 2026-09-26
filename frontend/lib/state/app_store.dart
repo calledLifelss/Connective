@@ -33,8 +33,30 @@ String friendlyError(Object e) {
     final short = msg.replaceFirst('Exception: ', '');
     return short.length > 260 ? '${short.substring(0, 260)}…' : short;
   }
+  if (msg.contains('egress unexpectedly via TUN')) {
+    // Proxy-only mode while a Connective device (connective0) still
+    // owns the default route: another live session, or a stale tunnel
+    // left behind by a crashed run. Not a device/elevation problem, so
+    // it must be matched before the generic TUN message below.
+    return 'A Connective tunnel is still active on this device. '
+        'Disconnect it first, then connect again.';
+  }
   if (msg.contains('TUN device') || msg.contains('TUN')) {
     return 'TUN setup failed (elevation or device issue). See Logs.';
+  }
+  if (msg.contains('conflicts with split tunneling')) {
+    // Backend settings conflict (B4): contains "kill switch" too, so it
+    // must be matched before the generic kill-switch failure below.
+    return "Kill switch and split tunneling can't both be on. "
+        'Turn one of them off.';
+  }
+  if (msg.contains('split app list exceeds')) {
+    return 'Split tunnel list is full ($kMaxSplitApps apps). '
+        'Remove some first.';
+  }
+  if (msg.contains('invalid app entry')) {
+    return 'Not a usable app name. Enter an executable name like '
+        '"firefox".';
   }
   if (msg.contains('kill switch')) {
     return 'Kill-switch setup failed. See Logs.';
@@ -63,6 +85,40 @@ String friendlyError(Object e) {
   }
   final short = msg.replaceFirst('Exception: ', '');
   return short.length > 220 ? '${short.substring(0, 220)}…' : short;
+}
+
+/// Dart mirror of backend apps.NormalizeAppID: basename, lowercase,
+/// ".exe" stripped, charset `[a-z0-9._-+]`, max 128 chars. Returns null
+/// when the input is not a usable app entry, so the routing page can
+/// reject bad manual input before it round-trips through the daemon.
+String? normalizeSplitAppId(String raw) {
+  var s = raw.trim();
+  if (s.isEmpty) return null;
+  s = s.replaceAll('\\', '/');
+  while (s.length > 1 && s.endsWith('/')) {
+    s = s.substring(0, s.length - 1);
+  }
+  final slash = s.lastIndexOf('/');
+  s = slash >= 0 ? s.substring(slash + 1) : s;
+  s = s.trim();
+  if (s.isEmpty || s == '.' || s == '/') return null;
+  var lower = s.toLowerCase();
+  if (lower.endsWith('.exe')) {
+    lower = lower.substring(0, lower.length - 4);
+  }
+  if (lower.isEmpty || lower.length > 128) return null;
+  for (final c in lower.codeUnits) {
+    final ok = (c >= 0x61 && c <= 0x7a) // a-z
+        ||
+        (c >= 0x30 && c <= 0x39) // 0-9
+        ||
+        c == 0x2e || // .
+        c == 0x5f || // _
+        c == 0x2d || // -
+        c == 0x2b; // +
+    if (!ok) return null;
+  }
+  return lower;
 }
 
 /// Central UI store. Presentation state only; every mutation goes
@@ -95,6 +151,36 @@ class AppStore extends ChangeNotifier {
   String selectedServerId = '';
   bool autoMode = true;
   String? lastError;
+
+  /// Routing settings in effect when the running tunnel was built
+  /// (captured on every transition into a connected state). Null while
+  /// not connected; compared against [settings] by
+  /// [routingPendingReconnect] to drive the dashboard's
+  /// "reconnect to apply" banner — routing/TUN/DNS/kill-switch/split
+  /// changes only take effect on the next connect (§9, §10).
+  AppSettings? _appliedRouting;
+
+  bool _reconnectingToApply = false;
+
+  /// Comparable projection of the routing-relevant settings fields.
+  static List<Object?> _routingFingerprint(AppSettings s) => [
+        s.routingMode,
+        s.dnsMode,
+        s.tunEnabled,
+        s.killSwitch,
+        s.splitMode,
+        s.splitApps.join('\n'),
+      ];
+
+  /// True while connected with saved routing settings that differ from
+  /// the ones the running tunnel was built with.
+  bool get routingPendingReconnect {
+    final applied = _appliedRouting;
+    if (applied == null) return false;
+    if (!ConnectionStates.isConnected(connectionState)) return false;
+    return !listEquals(
+        _routingFingerprint(settings), _routingFingerprint(applied));
+  }
 
   /// Foreign tunnel devices visible on the host (another VPN running).
   /// Informational: connecting may conflict; the backend still fails
@@ -150,6 +236,115 @@ class AppStore extends ChangeNotifier {
   final Map<String, bool> updatingSubs = {};
   String serverSearch = '';
   int logMinLevel = 0;
+
+  /// Dashboard server list controls (UI-local, no backend changes).
+  /// Filters: all | healthy | favorites | fastest | recent.
+  /// Sorts: latency | name | load.
+  String serverFilter = 'all';
+  String serverSort = 'latency';
+
+  /// Recently used server ids (most recent first, max 12, in-memory).
+  /// Updated whenever the daemon reports a new active server.
+  List<String> recentServerIds = const [];
+
+  void setServerFilter(String v) {
+    serverFilter = v;
+    notifyListeners();
+  }
+
+  void setServerSort(String v) {
+    serverSort = v;
+    notifyListeners();
+  }
+
+  void _touchRecent(String id) {
+    if (id.isEmpty) return;
+    final next = [id, for (final e in recentServerIds) if (e != id) e];
+    if (next.length > 12) next.removeRange(12, next.length);
+    recentServerIds = next;
+  }
+
+  /// Apply search + filter + sort to a server list (presentation only).
+  List<Server> applyServerView(List<Server> input, {String query = ''}) {
+    var out = [...input];
+    final q = query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      out = out.where((s) {
+        final sub = _subName(s.subscriptionId).toLowerCase();
+        return s.displayName.toLowerCase().contains(q) ||
+            s.country.toLowerCase().contains(q) ||
+            s.address.toLowerCase().contains(q) ||
+            s.protocol.toLowerCase().contains(q) ||
+            sub.contains(q);
+      }).toList();
+    }
+    // "Fastest" and "Recently used" define their own order — the chip
+    // *is* the sort. Applying the Sort menu on top of them would hand
+    // back the first 20 alphabetically (fastest) or recency in
+    // latency order (recent), which is not what the chip promises.
+    if (serverFilter == 'fastest') {
+      out = out.where((s) => s.latencyMs >= 0).toList()
+        ..sort((a, b) =>
+            _latencyRank(a).compareTo(_latencyRank(b)));
+      return out.length > 20 ? out.sublist(0, 20) : out;
+    }
+    if (serverFilter == 'recent') {
+      final order = {
+        for (var i = 0; i < recentServerIds.length; i++)
+          recentServerIds[i]: i
+      };
+      final seen =
+          out.where((s) => order.containsKey(s.id)).toList();
+      seen.sort(
+          (a, b) => order[a.id]!.compareTo(order[b.id]!));
+      return seen;
+    }
+    switch (serverFilter) {
+      case 'healthy':
+        out = out.where((s) => s.health == 'healthy').toList();
+        break;
+      case 'favorites':
+        out = out.where((s) => s.favorite).toList();
+        break;
+      default:
+        break;
+    }
+    switch (serverSort) {
+      case 'name':
+        out.sort((a, b) => a.displayName
+            .toLowerCase()
+            .compareTo(b.displayName.toLowerCase()));
+        break;
+      case 'load':
+        out.sort((a, b) {
+          final h = a.healthWeight.compareTo(b.healthWeight);
+          if (h != 0) return h;
+          return _latencyRank(a).compareTo(_latencyRank(b));
+        });
+        break;
+      default: // latency
+        out.sort((a, b) =>
+            _latencyRank(a).compareTo(_latencyRank(b)));
+        break;
+    }
+    return out;
+  }
+
+  static int _latencyRank(Server s) =>
+      s.latencyMs < 0 ? 1 << 30 : s.latencyMs;
+
+  /// Toggle a server's favorite flag via the existing servers.update
+  /// path (no new backend logic).
+  Future<void> toggleFavorite(String id) => _guarded(() async {
+        Server? found;
+        for (final s in servers) {
+          if (s.id == id) found = s;
+        }
+        if (found == null) return;
+        final next = found.copyWith(favorite: !found.favorite);
+        await client.call('servers.update', {'server': next.toJson()});
+        await refreshServers();
+      });
 
   /// UI-local preferences (persisted via ui.get/ui.update, no backend
   /// changes needed — presentation concerns only).
@@ -221,19 +416,6 @@ class AppStore extends ChangeNotifier {
     return '';
   }
 
-  List<Server> search(String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return servers;
-    return servers.where((s) {
-      final sub = _subName(s.subscriptionId).toLowerCase();
-      return s.displayName.toLowerCase().contains(q) ||
-          s.country.toLowerCase().contains(q) ||
-          s.address.toLowerCase().contains(q) ||
-          s.protocol.toLowerCase().contains(q) ||
-          sub.contains(q);
-    }).toList();
-  }
-
   String _subName(String id) {
     for (final s in subscriptions) {
       if (s.id == id) return s.name;
@@ -274,8 +456,22 @@ class AppStore extends ChangeNotifier {
           final m = Map<String, dynamic>.from(p);
           final prev = connectionState;
           connectionState = m['to'] as String? ?? connectionState;
+          if (ConnectionStates.isConnected(connectionState)) {
+            // Capture the settings this session was *built* with, only
+            // when entering a connected state: a health flap
+            // (degraded → connected) must not overwrite the snapshot
+            // with routing changes made while the tunnel was up.
+            if (!ConnectionStates.isConnected(prev)) {
+              _appliedRouting = settings;
+            }
+          } else if (!ConnectionStates.isBusy(connectionState)) {
+            _appliedRouting = null;
+          }
           final srv = m['server'] as String?;
-          if (srv != null && srv.isNotEmpty) activeServerId = srv;
+          if (srv != null && srv.isNotEmpty) {
+            activeServerId = srv;
+            _touchRecent(srv);
+          }
           if (!ConnectionStates.isBusy(connectionState)) lastError = null;
           _announceTransition(prev, connectionState);
           notifyListeners();
@@ -464,6 +660,7 @@ class AppStore extends ChangeNotifier {
             : <String, dynamic>{};
         connectionState = state['state'] as String? ?? connectionState;
         activeServerId = state['server'] as String? ?? activeServerId;
+        if (activeServerId.isNotEmpty) _touchRecent(activeServerId);
         autoMode = state['auto'] as bool? ?? autoMode;
         // Newer daemons report the manual selection separately from the
         // connected server. Older daemons omit the key: keep the
@@ -483,6 +680,8 @@ class AppStore extends ChangeNotifier {
           settings = AppSettings.fromJson(
               Map<String, dynamic>.from(state['settings'] as Map));
         }
+        _appliedRouting =
+            ConnectionStates.isConnected(connectionState) ? settings : null;
         final list = await client.call('servers.list');
         if (list is List) {
           servers = [
@@ -584,6 +783,41 @@ class AppStore extends ChangeNotifier {
   /// empty falls back to 'auto' semantics server-side).
   String get selectedServerIdOrActive =>
       selectedServerId.isNotEmpty ? selectedServerId : activeServerId;
+
+  /// Disconnect and connect again so saved routing changes take effect
+  /// (see [routingPendingReconnect]). The daemon's disconnect is
+  /// synchronous — it reaches the disconnected state before returning —
+  /// so the follow-up connect never races a busy state machine. The
+  /// flag debounces double presses while the state events catch up.
+  /// Connect to [id]: select it first, then — if a tunnel is already
+  /// up — drop and rebuild it against that server. A plain
+  /// [toggleConnection] here would only disconnect, which is exactly
+  /// what the server row's Connect/Reconnect button must not do.
+  Future<void> connectToServer(String id) => _guarded(() async {
+        await selectServer(id);
+        if (ConnectionStates.isConnected(connectionState)) {
+          await reconnectToApply();
+        } else {
+          await toggleConnection();
+        }
+      });
+
+  Future<void> reconnectToApply() => _guarded(() async {
+        if (_reconnectingToApply ||
+            !ConnectionStates.isConnected(connectionState)) {
+          return;
+        }
+        _reconnectingToApply = true;
+        try {
+          await client.call('connection.disconnect');
+          final target =
+              autoMode ? 'auto' : selectedServerIdOrActive;
+          await client.call(
+              'connection.connect', {'serverId': target});
+        } finally {
+          _reconnectingToApply = false;
+        }
+      });
 
   Future<void> selectServer(String id) => _guarded(() async {
         final out = await client.call('servers.select', {'serverId': id});
@@ -803,6 +1037,32 @@ class AppStore extends ChangeNotifier {
         }
       });
 
+  /// Retry a failed/cancelled/rolled-back update. A fresh check is the
+  /// only legal transition out of those states (backend state.go); when
+  /// it confirms an update, download immediately so a single press
+  /// resumes the whole flow.
+  Future<void> retryUpdate() => _guarded(() async {
+        final checked = await client.call('update.check');
+        if (checked is Map) {
+          applyUpdateStatus(Map<String, dynamic>.from(checked));
+        }
+        // The handler answers "checking" and the verdict arrives on
+        // event.update — wait for it (bounded) so one press really
+        // resumes the download instead of stopping at a re-check.
+        for (var i = 0;
+            i < 40 && updateState == UpdateStates.checking;
+            i++) {
+          await Future.delayed(const Duration(milliseconds: 250));
+          await refreshUpdateStatus();
+        }
+        if (updateState == UpdateStates.available) {
+          final dl = await client.call('update.download');
+          if (dl is Map) {
+            applyUpdateStatus(Map<String, dynamic>.from(dl));
+          }
+        }
+      });
+
   Future<void> dismissUpdate() => _guarded(() async {
         final out = await client.call('update.dismiss');
         if (out is Map) {
@@ -911,11 +1171,21 @@ class AppStore extends ChangeNotifier {
 
   Future<void> setSplitAppSelected(String id, bool selected) =>
       _guarded(() async {
+        final trimmed = id.trim();
         final cur = settings.splitApps.toSet();
         if (selected) {
-          cur.add(id.trim());
+          if (!cur.contains(trimmed) && cur.length >= kMaxSplitApps) {
+            // Client-side cap: refuse before the backend rejects the
+            // whole document, so the list state stays consistent.
+            lastError =
+                'Split tunnel list is full ($kMaxSplitApps apps). '
+                'Remove one first.';
+            notifyListeners();
+            return;
+          }
+          cur.add(trimmed);
         } else {
-          cur.remove(id.trim());
+          cur.remove(trimmed);
         }
         final next = cur.where((e) => e.trim().isNotEmpty).toList();
         final out = await client.call('settings.update',

@@ -278,3 +278,104 @@ func TestSiblingBinary(t *testing.T) {
 		t.Fatalf("absent binary must yield empty, got %q", got)
 	}
 }
+
+// B14/B15: settings.update rejects oversized or unnormalizable split
+// lists instead of silently truncating/dropping them.
+func TestUpdateSettingsSplitValidation(t *testing.T) {
+	d := testDaemon(t)
+	base := settings.Defaults()
+	// Cap exceeded.
+	base.SplitMode = settings.SplitBypass
+	for i := 0; i <= settings.MaxSplitApps; i++ {
+		base.SplitApps = append(base.SplitApps, "app")
+	}
+	if err := callErr(t, d, d.hUpdateSettings, base); err == nil {
+		t.Fatal("oversized split list must be rejected")
+	}
+	// Unnormalizable entry.
+	base = settings.Defaults()
+	base.SplitMode = settings.SplitBypass
+	base.SplitApps = []string{"firefox", "not a valid name"}
+	err := callErr(t, d, d.hUpdateSettings, base)
+	if err == nil || !strings.Contains(err.Error(), "invalid app entry") {
+		t.Fatalf("invalid entry must be rejected, got %v", err)
+	}
+	// Valid list passes and stays normalized.
+	base = settings.Defaults()
+	base.SplitMode = settings.SplitBypass
+	base.SplitApps = []string{"C:\\Program Files\\Mozilla Firefox\\firefox.exe"}
+	out := call(t, d, d.hUpdateSettings, base)
+	got := out.(settings.Settings)
+	if len(got.SplitApps) != 1 || got.SplitApps[0] != "firefox" {
+		t.Fatalf("split apps not normalized: %v", got.SplitApps)
+	}
+}
+
+// B4: kill switch + split tunneling rejected by settings.update.
+func TestUpdateSettingsConflict(t *testing.T) {
+	d := testDaemon(t)
+	s := settings.Defaults()
+	s.KillSwitch = true
+	s.SplitMode = settings.SplitOnly
+	s.SplitApps = []string{"firefox"}
+	err := callErr(t, d, d.hUpdateSettings, s)
+	if err == nil || !strings.Contains(err.Error(), "kill switch") {
+		t.Fatalf("conflict must be rejected with a clear error, got %v", err)
+	}
+}
+
+// B2: applied markers persist and clear per-flag.
+func TestAppliedStateLifecycle(t *testing.T) {
+	d := testDaemon(t)
+	d.setApplied(true, false)
+	d.setApplied(false, true)
+	d.mu.Lock()
+	if !d.appliedKill || !d.appliedTun {
+		d.mu.Unlock()
+		t.Fatal("both flags must be set")
+	}
+	d.mu.Unlock()
+	raw, err := os.ReadFile(d.appliedPath())
+	if err != nil {
+		t.Fatalf("marker must exist: %v", err)
+	}
+	var st struct {
+		KillSwitch bool `json:"killSwitch"`
+		Tun        bool `json:"tun"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil || !st.KillSwitch || !st.Tun {
+		t.Fatalf("bad marker %q: %v", raw, err)
+	}
+	d.clearApplied(true, false)
+	if _, err := os.Stat(d.appliedPath()); err != nil {
+		t.Fatalf("marker must survive while tun still applied: %v", err)
+	}
+	d.clearApplied(false, true)
+	if _, err := os.Stat(d.appliedPath()); !os.IsNotExist(err) {
+		t.Fatalf("marker must be removed when nothing is applied: %v", err)
+	}
+}
+
+// B3: a crash marker is reconciled (cleared) when the helper succeeds;
+// no marker = no helper runs.
+func TestReconcileApplied(t *testing.T) {
+	d := testDaemon(t)
+	// Point the helper at a path that fails TrustedBinary immediately:
+	// cleanup must fail fast, never resolve a real elevated helper in
+	// tests.
+	d.settings.HelperPath = filepath.Join(t.TempDir(), "no-such-helper")
+	// No marker: nothing happens, no error.
+	d.reconcileApplied()
+	// Marker for both, but no helper on PATH: cleanup fails, marker stays.
+	d.setApplied(true, true)
+	d.reconcileApplied() // helperPath fails -> flags kept
+	if _, err := os.Stat(d.appliedPath()); err != nil {
+		t.Fatalf("marker must survive a failed cleanup: %v", err)
+	}
+	d.mu.Lock()
+	kill, tun := d.appliedKill, d.appliedTun
+	d.mu.Unlock()
+	if !kill || !tun {
+		t.Fatalf("flags must be adopted from the marker: kill=%v tun=%v", kill, tun)
+	}
+}

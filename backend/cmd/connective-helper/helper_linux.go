@@ -4,8 +4,10 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -88,10 +90,28 @@ func killswitch(on bool, args []string) error {
 		if !ok {
 			return fmt.Errorf("killswitch-on: bad --allow %q (want ip:port)", a)
 		}
+		// Hardening: these strings are interpolated into an nft script.
+		// Only a parseable IP and a numeric port may pass (the daemon
+		// formats them itself, but the helper runs elevated).
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
+			return fmt.Errorf("killswitch-on: bad --allow %q (invalid ip)", a)
+		}
+		pnum, err := strconv.Atoi(port)
+		if err != nil || pnum < 1 || pnum > 65535 {
+			return fmt.Errorf("killswitch-on: bad --allow %q (invalid port)", a)
+		}
+		// Family-specific match: `ip daddr` rejects IPv6 addresses and
+		// vice versa, so an IPv6-only endpoint would otherwise get no
+		// allow rule and be blocked by its own kill switch.
+		family := "ip"
+		if parsed.To4() == nil {
+			family = "ip6"
+		}
 		rules = append(rules, fmt.Sprintf(
-			"add rule inet connective output ip daddr %s tcp dport %s ct state new accept", ip, port))
+			"add rule inet connective output %s daddr %s tcp dport %d ct state new accept", family, parsed.String(), pnum))
 		rules = append(rules, fmt.Sprintf(
-			"add rule inet connective output ip daddr %s udp dport %s accept", ip, port))
+			"add rule inet connective output %s daddr %s udp dport %d accept", family, parsed.String(), pnum))
 	}
 	script := []string{
 		"add table inet connective",

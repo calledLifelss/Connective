@@ -38,17 +38,20 @@ func runApply(fs *flag.FlagSet, args []string) error {
 	health := fs.Duration("health-timeout", 60*time.Second, "new-version health deadline")
 	resultFile := fs.String("result-file", "", "report path (JSON) for the next app boot")
 	waitTO := fs.Duration("wait-timeout", 15*time.Minute, "how long to wait for the app to close")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *root == "" || *version == "" {
-		return fmt.Errorf("install-root and version are required")
-	}
+	// Defined BEFORE parsing: a flag parse failure must still report
+	// through result.json, otherwise the boot sees "pending with no
+	// result" and silently clears it — the failure vanishes.
 	fail := func(err error) error {
 		if *resultFile != "" {
 			_ = update.WriteResult(*resultFile, *version, false, err.Error(), "")
 		}
 		return err
+	}
+	if err := fs.Parse(args); err != nil {
+		return fail(err)
+	}
+	if *root == "" || *version == "" {
+		return fail(fmt.Errorf("install-root and version are required"))
 	}
 	in := &update.Installer{Root: *root, HealthTimeout: *health}
 
@@ -64,6 +67,10 @@ func runApply(fs *flag.FlagSet, args []string) error {
 		if err := update.PromoteStaged(*staged, *root, *version); err != nil {
 			return fail(err)
 		}
+		// The copy is in place now: drop the daemon's staging copy so
+		// successful updates do not accumulate full trees under the
+		// data dir (nothing else ever cleaned it).
+		defer os.RemoveAll(*staged)
 	}
 	// 2. Sanity: never activate a partial tree.
 	if err := checkTree(*root, *version); err != nil {

@@ -1,3 +1,7 @@
+/// Mirrors backend settings.MaxSplitApps: hard cap on the per-app
+/// split-tunnel list (a hostile document must not bloat the core config).
+const int kMaxSplitApps = 200;
+
 /// Application settings mirror (backend/internal/settings JSON).
 class AppSettings {
   final bool autoConnect;
@@ -85,6 +89,7 @@ class AppSettings {
         theme: theme ?? this.theme,
         urlTestIntervalMin: urlTestIntervalMin ?? this.urlTestIntervalMin,
         connectionTestUrl: connectionTestUrl ?? this.connectionTestUrl,
+        clashApiPort: clashApiPort ?? this.clashApiPort,
         corePath: corePath ?? this.corePath,
         helperPath: helperPath ?? this.helperPath,
         mtu: mtu ?? this.mtu,

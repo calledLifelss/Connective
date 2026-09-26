@@ -87,30 +87,3 @@ class UpdateBanner extends StatelessWidget {
   }
 }
 
-
-
-/// Subtle update dot for navigation areas.
-class UpdateDot extends StatelessWidget {
-  final AppStore store;
-
-  const UpdateDot({super.key, required this.store});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        if (!store.updateAvailable) {
-          return const SizedBox.shrink();
-        }
-        return Container(
-          width: 7,
-          height: 7,
-          decoration: const BoxDecoration(
-              color: ConnectiveTheme.success,
-              shape: BoxShape.circle),
-        );
-      },
-    );
-  }
-}

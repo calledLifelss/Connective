@@ -84,13 +84,28 @@ jobs:
           $ver = $env:GITHUB_REF_NAME -replace '^v',''
           if ([string]::IsNullOrEmpty($ver)) { $ver = "0.0.0-dev" }
           "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # Flutter's VERSIONINFO parse (pub_semver) needs
+          # major.minor.patch: a 2-part tag like v6.0 throws in
+          # Version.parse and the exe silently falls back to 1.0.0.
+          # Pad for --build-name only — VER stays exact for the guard,
+          # stage tree paths and the installer.
+          $bn = ''
+          if ($env:GITHUB_REF_NAME -like 'v*') {
+            $p = @($ver -split '\.')
+            while ($p.Count -lt 3) { $p += '0' }
+            $bn = ($p[0..2] -join '.')
+          }
+          "VER_BUILDNAME=$bn" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: version guard
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_NAME -notlike 'v*') { exit 0 } # branches: no version to check
-          Select-String -Path frontend\pubspec.yaml -Pattern "^version: $env:VER" -Quiet | ForEach-Object { if (-not $_) { throw "pubspec version mismatch" } }
-          Select-String -Path backend\internal\update\version.go -Pattern "CurrentVersion = `"$env:VER`"" -Quiet | ForEach-Object { if (-not $_) { throw "backend version mismatch" } }
+          # NB: Select-String -Quiet emits nothing on no-match (it is
+          # not $false), so piping into ForEach-Object never throws —
+          # evaluate the match as a boolean instead.
+          if (-not (Select-String -Path frontend\pubspec.yaml -Pattern "^version: $env:VER" -Quiet)) { throw "pubspec version mismatch" }
+          if (-not (Select-String -Path backend\internal\update\version.go -Pattern "CurrentVersion = `"$env:VER`"" -Quiet)) { throw "backend version mismatch" }
 
       - name: build backend
         working-directory: backend
@@ -114,7 +129,13 @@ jobs:
 
       - name: build flutter
         working-directory: frontend
-        run: flutter build windows --release --build-name "${{ env.VER }}" --build-number 1
+        run: |
+          if ([string]::IsNullOrEmpty($env:VER_BUILDNAME)) {
+            # non-tag ref: let the pubspec version speak for itself
+            flutter build windows --release --build-number 1
+          } else {
+            flutter build windows --release --build-number 1 --build-name $env:VER_BUILDNAME
+          }
 
       - name: stage versioned tree
         shell: pwsh

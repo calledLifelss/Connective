@@ -16,7 +16,14 @@ func WriteResult(path, version string, ok bool, errMsg, prev string) error {
 		return nil
 	}
 	res := ResultUpdate{Version: version, OK: ok, Error: errMsg, Prev: prev, AtUnix: time.Now().Unix()}
-	return writeJSON(path, res)
+	if err := writeJSON(path, res); err != nil {
+		return err
+	}
+	// The writer may be root (elevated updater) while the reader is the
+	// unprivileged daemon: make the file belong to whoever owns the
+	// directory, or reconcileBoot can never announce the result.
+	adoptOwner(path)
+	return nil
 }
 
 // WriteCurrentTxt flips the Windows version pointer (the installed

@@ -56,6 +56,11 @@ type Options struct {
 	// Applied on next connect; process matching needs the TUN inbound.
 	SplitMode string
 	SplitApps []string
+	// DNSMode selects DNS posture: "proxy-aware" (default, DoT via the
+	// proxy — anti-leak), "system" (leave lookups to the OS resolver,
+	// no tunnel DNS), "custom" (falls back to proxy-aware until a
+	// custom server is configurable).
+	DNSMode string
 }
 
 // DefaultOptions returns standard desktop options.
@@ -157,7 +162,7 @@ func systemOutbounds() []any {
 func baseConfig(opts Options) map[string]any {
 	cfg := map[string]any{
 		"log":      map[string]any{"level": firstNonEmpty(opts.LogLevel, "info")},
-		"dns":      dnsConfig(),
+		"dns":      dnsConfig(opts.DNSMode),
 		"inbounds": inbounds(opts),
 	}
 	if opts.ClashPort > 0 {
@@ -300,9 +305,24 @@ func inbounds(opts Options) []any {
 	return in
 }
 
-func dnsConfig() map[string]any {
-	// New-style DNS server objects (sing-box >= 1.12; legacy string
-	// addresses were removed in 1.14 — verified by `sing-box check`).
+// dnsConfig renders the DNS section for the requested mode. New-style
+// server objects (sing-box >= 1.12; legacy string addresses were
+// removed in 1.14 — verified by `sing-box check`).
+//
+//	proxy-aware/custom: DoT to 8.8.8.8 detoured through the proxy so
+//	lookups neither leak plaintext to the LAN nor bypass the tunnel.
+//	system: no tunnel DNS at all — hijacked queries go to the OS
+//	resolver directly (user asked for system DNS behavior).
+func dnsConfig(mode string) map[string]any {
+	if mode == "system" {
+		return map[string]any{
+			"servers": []any{
+				map[string]any{"tag": "local-dns", "type": "local", "detour": "direct"},
+			},
+			"rules": []any{},
+			"final": "local-dns",
+		}
+	}
 	return map[string]any{
 		"servers": []any{
 			map[string]any{"tag": "proxy-dns", "type": "tls", "server": "8.8.8.8", "detour": "proxy"},
@@ -318,6 +338,12 @@ func dnsConfig() map[string]any {
 func routeConfig(mode Mode, final string, splitMode string, splitApps []string) map[string]any {
 	apps := cleanSplitApps(splitApps)
 	rules := []any{}
+	// Global hijack: every app's DNS goes to the DNS module (whose own
+	// rules pick proxy-dns/local-dns). Split "only" mode replaces it
+	// with a process-scoped hijack below so non-listed apps' DNS
+	// follows their (direct) traffic instead of being forced through
+	// the tunnel resolver.
+	globalHijack := true
 	// Per-app split rules win over everything below: a bypassed app's
 	// traffic (including its DNS) must not hit the proxy intercepts.
 	switch splitMode {
@@ -334,20 +360,48 @@ func routeConfig(mode Mode, final string, splitMode string, splitApps []string) 
 			if final == "" {
 				final = "proxy"
 			}
+			// Sniff must precede the protocol:dns matcher.
+			rules = append(rules, map[string]any{"action": "sniff"})
+			// Listed apps: hijack their DNS (to the DNS module) BEFORE
+			// the process route rule, otherwise the route rule catches
+			// the query first and it would ride the tunnel raw.
+			rules = append(rules, map[string]any{
+				"process_name": apps,
+				"protocol":     "dns",
+				"action":       "hijack-dns",
+			})
 			rules = append(rules, map[string]any{
 				"process_name": apps,
 				"action":       "route",
 				"outbound":     final,
 			})
-			// Default flips: everything NOT listed goes direct.
+			// Default flips: everything NOT listed (traffic and DNS)
+			// goes direct — no global hijack to drag it into the
+			// tunnel resolver.
 			final = "direct"
+			globalHijack = false
 		}
 	}
-	rules = append(rules,
-		map[string]any{"action": "sniff"},
-		map[string]any{"protocol": "dns", "action": "hijack-dns"},
-		map[string]any{"ip_is_private": true, "action": "route", "outbound": "direct"},
-	)
+	if globalHijack {
+		rules = append(rules,
+			map[string]any{"action": "sniff"},
+			map[string]any{"protocol": "dns", "action": "hijack-dns"},
+		)
+	}
+	// Mode decides what happens to LAN/private traffic. Rules mode is
+	// the safe default posture (private stays direct); Global means
+	// "proxy everything" — the user asked for it — so private/LAN is
+	// proxied too, except the address classes no tunnel can carry
+	// (loopback and link-local must never leave the host).
+	if mode == ModeRules {
+		rules = append(rules, map[string]any{"ip_is_private": true, "action": "route", "outbound": "direct"})
+	} else {
+		rules = append(rules, map[string]any{
+			"ip_cidr":  []string{"127.0.0.0/8", "::1/128", "fe80::/10"},
+			"action":   "route",
+			"outbound": "direct",
+		})
+	}
 	if final == "" {
 		final = "proxy"
 	}

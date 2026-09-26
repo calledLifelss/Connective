@@ -34,6 +34,11 @@ type unzipBudget struct {
 
 func newUnzipBudget() *unzipBudget { return &unzipBudget{remaining: maxUnzipTotalBytes} }
 
+// DeltaListingName is the metadata member update-tool writes into every
+// delta: the full file list of the TARGET tree (newline separated,
+// slash paths). It is consumed by the applier, never extracted.
+const DeltaListingName = ".connective-delta-files"
+
 // ZipOverlayApplier is the honest reference implementation used by
 // tests and tooling: the delta is a zip of changed files that overlays
 // a copy of the current tree. Production may swap in a binary-diff
@@ -42,8 +47,9 @@ func newUnzipBudget() *unzipBudget { return &unzipBudget{remaining: maxUnzipTota
 // presented as a production mechanism.
 type ZipOverlayApplier struct{}
 
-// Apply copies currentDir to outDir, then overlays the zip contents.
-// Zip-slip paths are rejected; context cancellation aborts.
+// Apply copies currentDir to outDir, then overlays the zip contents and
+// (when the delta carries a target listing) drops files the new version
+// deleted. Zip-slip paths are rejected; context cancellation aborts.
 func (ZipOverlayApplier) Apply(ctx context.Context, currentDir, deltaPath, outDir string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -56,20 +62,127 @@ func (ZipOverlayApplier) Apply(ctx context.Context, currentDir, deltaPath, outDi
 		return fmt.Errorf("update: bad delta: %w", err)
 	}
 	defer zr.Close()
+	var listing []string
+	for _, f := range zr.File {
+		if f.Name == DeltaListingName {
+			listing, err = readDeltaListing(f)
+			if err != nil {
+				return err
+			}
+			break
+		}
+	}
 	budget := newUnzipBudget()
 	for _, f := range zr.File {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if f.Name == DeltaListingName {
+			continue // metadata, not part of the tree
+		}
 		if err := unzipOneBudgeted(f, outDir, budget); err != nil {
 			return err
 		}
+	}
+	if listing != nil {
+		if err := dropMissing(outDir, listing); err != nil {
+			return fmt.Errorf("update: delta prune: %w", err)
+		}
+	}
+	return nil
+}
+
+// readDeltaListing parses the target-tree file list, bounded like any
+// other artifact member (a hostile delta must not exhaust memory).
+func readDeltaListing(f *zip.File) ([]string, error) {
+	if f.UncompressedSize64 > 8<<20 {
+		return nil, fmt.Errorf("update: delta listing too large")
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	raw, err := io.ReadAll(io.LimitReader(rc, 8<<20+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 8<<20 {
+		return nil, fmt.Errorf("update: delta listing too large")
+	}
+	var out []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		clean := filepath.Clean(line)
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("update: unsafe delta listing path %q", line)
+		}
+		out = append(out, clean)
+		if len(out) > maxUnzipFiles {
+			return nil, fmt.Errorf("update: too many files in artifact")
+		}
+	}
+	return out, nil
+}
+
+// dropMissing removes files under outDir that the target listing does
+// not mention (they were deleted upstream), then prunes the empty
+// directories they leave behind.
+func dropMissing(outDir string, listing []string) error {
+	keep := make(map[string]bool, len(listing))
+	for _, rel := range listing {
+		keep[filepath.Clean(rel)] = true
+	}
+	var dirs []string
+	err := filepath.Walk(outDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(outDir, path)
+		if rerr != nil {
+			return rerr
+		}
+		if rel == "." {
+			return nil
+		}
+		if info.IsDir() {
+			dirs = append(dirs, path)
+			return nil
+		}
+		if !keep[rel] {
+			return os.Remove(path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	// Deepest first so parents empty out after their children.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // fails on non-empty: expected
 	}
 	return nil
 }
 
 func unzipOne(f *zip.File, outDir string) error {
 	return unzipOneBudgeted(f, outDir, newUnzipBudget())
+}
+
+// filePerm resolves the on-disk mode for an extracted member. Modes
+// recorded by Unix zip tools are honored, so data files stop landing
+// world-executable. Mode-less zips (DOS creator, or Go's legacy
+// zip.Writer.Create which reports 0666 for every member) count as "no
+// mode recorded" and keep the historical 0755 — required binaries must
+// never lose the execute bit to a tool that did not write one.
+func filePerm(f *zip.File) os.FileMode {
+	perm := f.Mode().Perm()
+	if perm == 0 || perm == 0o666 {
+		return 0o755
+	}
+	return perm
 }
 
 func unzipOneBudgeted(f *zip.File, outDir string, budget *unzipBudget) error {
@@ -104,7 +217,7 @@ func unzipOneBudgeted(f *zip.File, outDir string, budget *unzipBudget) error {
 		return err
 	}
 	defer rc.Close()
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm(f))
 	if err != nil {
 		return err
 	}

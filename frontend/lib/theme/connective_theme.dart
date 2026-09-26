@@ -14,10 +14,11 @@ class ConnectiveTheme {
   static const Color borderSubtle = Color(0xFF232932);
 
   // Text: three-step hierarchy — bright for primary info, mid gray
-  // for secondary, dark gray for metadata only.
+  // for secondary, muted gray for metadata only. Muted is kept at
+  // ≥4.5:1 against the charcoal background for readability.
   static const Color textPrimary = Color(0xFFE8EBEF);
-  static const Color textSecondary = Color(0xFFA2A9B4);
-  static const Color textMuted = Color(0xFF6E7580);
+  static const Color textSecondary = Color(0xFFA8B0BC);
+  static const Color textMuted = Color(0xFF8B93A1);
 
   // Semantic accent — used sparingly (primary actions, active state).
   static const Color accent = Color(0xFF27D7A0);

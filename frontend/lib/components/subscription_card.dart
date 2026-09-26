@@ -32,6 +32,22 @@ class SubscriptionHeader extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // Account affordance: marks this as subscription /
+                // account info, not another server row.
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: ConnectiveTheme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: ConnectiveTheme.border),
+                  ),
+                  child: const Icon(Icons.person_outline,
+                      size: 18,
+                      color: ConnectiveTheme.textSecondary),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment:
@@ -47,6 +63,7 @@ class SubscriptionHeader extends StatelessWidget {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 14,
+                                    height: 1.25,
                                     color: ConnectiveTheme
                                         .textPrimary)),
                           ),
@@ -57,6 +74,17 @@ class SubscriptionHeader extends StatelessWidget {
                                 fontSize: 12,
                                 color: ConnectiveTheme.textMuted),
                           ),
+                          if (sub.lastError.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            const Tooltip(
+                              message:
+                                  'Update error — see Logs',
+                              child: Icon(Icons.error_outline,
+                                  color:
+                                      ConnectiveTheme.warning,
+                                  size: 15),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -64,7 +92,7 @@ class SubscriptionHeader extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 if (updating)
                   const SizedBox(
                       width: 16,
@@ -74,12 +102,13 @@ class SubscriptionHeader extends StatelessWidget {
                 else ...[
                   IconButton(
                     icon: const Icon(Icons.refresh, size: 18),
-                    tooltip: 'Update now',
+                    tooltip: 'Refresh subscription',
                     onPressed: () =>
                         store.updateSubscriptions(sub.id),
                   ),
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_horiz, size: 18),
+                    tooltip: 'Manage subscription',
                     onSelected: (v) =>
                         subscriptionMenu(context, store, sub, v),
                     itemBuilder: (context) => const [
@@ -95,13 +124,6 @@ class SubscriptionHeader extends StatelessWidget {
                     ],
                   ),
                 ],
-                if (sub.lastError.isNotEmpty)
-                  const Tooltip(
-                    message: 'Update error — see Logs',
-                    child: Icon(Icons.error_outline,
-                        color: ConnectiveTheme.warning,
-                        size: 18),
-                  ),
                 Icon(
                     expanded
                         ? Icons.expand_less
@@ -136,7 +158,7 @@ class TrafficBar extends StatelessWidget {
           : fraction >= 0.8
               ? ConnectiveTheme.warning
               : ConnectiveTheme.success;
-      final expiry = traffic.expiryLabel();
+      final expiry = traffic.expiryLong();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -144,7 +166,7 @@ class TrafficBar extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  traffic.usageLabel(),
+                  traffic.usageShort(),
                   style: const TextStyle(
                     fontSize: 12,
                     color: ConnectiveTheme.textSecondary,

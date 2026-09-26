@@ -90,7 +90,7 @@ class _ConnectiveAppState extends State<ConnectiveApp>
 
   @override
   void initState() {
-    super.initState;
+    super.initState();
     widget.store.quitApp = _quit;
     trayManager.addListener(this);
     windowManager.addListener(this);
@@ -238,7 +238,7 @@ class _Sidebar extends StatelessWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 2),
+                  horizontal: 8, vertical: 4),
               itemCount: _labels.length,
               itemBuilder: (context, i) {
                 final selected = i == index;
@@ -268,7 +268,9 @@ class _Sidebar extends StatelessWidget {
                           ),
                         ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
+                            horizontal: 10, vertical: 9),
+                        constraints:
+                            const BoxConstraints(minHeight: 40),
                         child: Row(
                           children: [
                             Icon(
@@ -286,6 +288,7 @@ class _Sidebar extends StatelessWidget {
                                 _labels[i],
                                 style: TextStyle(
                                   fontSize: 13,
+                                  height: 1.3,
                                   fontWeight: selected
                                       ? FontWeight.w600
                                       : FontWeight.w400,
@@ -334,13 +337,15 @@ class _Sidebar extends StatelessWidget {
                 dot = ConnectiveTheme.textMuted;
               }
               return Padding(
+                // Quiet status footer: useful at a glance, but muted
+                // so it never competes with the dashboard hero.
                 padding: const EdgeInsets.symmetric(
                     horizontal: 14, vertical: 10),
                 child: Row(
                   children: [
                     Container(
-                        width: 8,
-                        height: 8,
+                        width: 6,
+                        height: 6,
                         decoration: BoxDecoration(
                             color: dot,
                             shape: BoxShape.circle)),
@@ -349,8 +354,8 @@ class _Sidebar extends StatelessWidget {
                       child: Text(
                         ConnectionStates.label(state),
                         style: const TextStyle(
-                            fontSize: 12,
-                            color: ConnectiveTheme.textSecondary),
+                            fontSize: 11,
+                            color: ConnectiveTheme.textMuted),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

@@ -1,5 +1,5 @@
 Name:           connective
-Version:        0.5.1
+Version:        6.0
 Release:        1%{?dist}
 Summary:        Modern desktop VPN client (Flutter + Go + sing-box)
 License:        Apache-2.0 AND GPL-3.0-only
@@ -97,6 +97,31 @@ touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %changelog
+* Sat Sep 26 2026 Connective Team - 6.0-1
+- Dashboard rebuilt: content spans the full window width (the centered
+  760px column is gone), status hero (state, protection, active
+  server, connect), real traffic graph with wall-clock axis + hover
+  readout + 5-minute history, filter chips/sort/favorites, explicit
+  Auto-vs-manual selection, per-row Connect/Switch/Reconnect.
+- Routing: edits surface a reconnect prompt instead of quietly taking
+  effect only on next connect; kill-switch vs split-tunnel conflicts
+  are refused; split lists capped at 200 with inline errors; DNS mode
+  reaches the generated config; Global mode carries LAN traffic;
+  applied TUN/kill-switch state persisted and reconciled at boot.
+- Windows updater: arguments pre-quoted (installs under "Program
+  Files" no longer fail silently), updater child watched so a declined
+  UAC prompt reports a failure instead of hanging on "restarting",
+  root-written result.json chowned to the data-dir owner.
+- Update flow: cancel aborts staging, manual checks no longer hold the
+  manager lock, whole-body download timeout removed, delta prunes
+  files deleted upstream and refuses a wrong-version base, one broken
+  GitHub release is skipped instead of failing every check, failure
+  backoff clamped, release CI deltas against the exact Linux asset.
+- Fixes: graph hover marker off by the 52px axis gutter, invented
+  timestamps on the traffic axis, update "Try again" never resuming
+  the download, routing banner cleared by a health flap, filter-specific
+  ordering, sidebar initState call, Windows CI version guard that
+  could never fail.
 * Thu Sep 24 2026 Connective Team - 0.5.1-1
 - Updater repair: pkexec spawn kept the updater binary (was asking
   pkexec to run "apply"), daemon-staged trees are promoted into the

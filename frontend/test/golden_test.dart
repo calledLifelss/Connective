@@ -72,17 +72,37 @@ void main() {
         height: 800,
         child: ConnectiveApp(store: store)));
     await settle(t);
-    await t.drag(find.byKey(const Key('dash-scroll')),
-        const Offset(0, -400));
-    await settle(t);
+    Future<void> scrollIntoView(Finder f) async {
+      final view = find.byKey(const Key('dash-scroll'));
+      for (var i = 0; i < 10; i++) {
+        if (f.evaluate().isNotEmpty) break;
+        await t.drag(view, const Offset(0, -400));
+        await settle(t);
+      }
+    }
+
+    await scrollIntoView(find.text('Germany Servers'));
     final id = store.subscriptions.first.id;
     if (!store.isExpandedSub(id)) {
       await t.tap(find.text('Germany Servers'));
       await settle(t);
     }
     final srv = store.servers.first;
+    await scrollIntoView(find.text(srv.displayName));
     if (!store.isExpandedServer(srv.id)) {
       await t.tap(find.text(srv.displayName));
+      await settle(t);
+    }
+    // Frame the expanded row for a stable capture: center it in
+    // the upper half so the detail section is fully visible.
+    final view = find.byKey(const Key('dash-scroll'));
+    for (var i = 0; i < 8; i++) {
+      double y = 1000;
+      try {
+        y = t.getCenter(find.text(srv.displayName)).dy;
+      } catch (_) {}
+      if (y > 180 && y < 320) break;
+      await t.drag(view, Offset(0, y <= 180 ? 200 : -200));
       await settle(t);
     }
     await expectLater(

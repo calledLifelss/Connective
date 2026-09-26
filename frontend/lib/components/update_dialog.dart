@@ -170,14 +170,28 @@ List<Widget> _actions(BuildContext context, AppStore store) {
         ),
       ];
     case UpdateStates.updated:
-    case UpdateStates.failed:
-    case UpdateStates.rolledBack:
-    case UpdateStates.cancelled:
       return [
         TextButton(
           key: const Key('update-dialog-close'),
           onPressed: pop,
           child: const Text('Close'),
+        ),
+      ];
+    case UpdateStates.failed:
+    case UpdateStates.rolledBack:
+    case UpdateStates.cancelled:
+      // Retry re-checks (the only legal transition out of these
+      // states) and resumes the download automatically.
+      return [
+        TextButton(
+          key: const Key('update-dialog-close'),
+          onPressed: pop,
+          child: const Text('Close'),
+        ),
+        FilledButton(
+          key: const Key('update-dialog-retry'),
+          onPressed: () => store.retryUpdate(),
+          child: const Text('Try again'),
         ),
       ];
     default:
