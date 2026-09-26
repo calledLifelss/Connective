@@ -149,10 +149,14 @@ func linuxProcesses() []string {
 		if !isPID {
 			continue
 		}
-		// comm is the kernel short name, no args, one line.
-		if raw, err := os.ReadFile(filepath.Join(procRoot, name, "comm")); err == nil {
-			if s := strings.TrimSpace(string(raw)); s != "" {
-				out = append(out, s)
+		// The executable path first: comm is truncated to 15 chars by
+		// the kernel ("chromium-browser" shows up as "chromium-browse")
+		// while the core matches process_name against the full exe
+		// basename — truncated ids can never match a split-tunnel
+		// rule, so the app they name stays on the VPN.
+		if target, err := os.Readlink(filepath.Join(procRoot, name, "exe")); err == nil {
+			if base := filepath.Base(strings.TrimSpace(target)); base != "" && base != "." && base != "/" {
+				out = append(out, base)
 				continue
 			}
 		}
@@ -164,6 +168,15 @@ func linuxProcesses() []string {
 			}
 			if base := filepath.Base(strings.TrimSpace(arg0)); base != "" && base != "." && base != "/" {
 				out = append(out, base)
+				continue
+			}
+		}
+		// Last resort: comm (kernel short name, no args, one line —
+		// truncated at 15 chars, so it may not match core rules for
+		// long executable names).
+		if raw, err := os.ReadFile(filepath.Join(procRoot, name, "comm")); err == nil {
+			if s := strings.TrimSpace(string(raw)); s != "" {
+				out = append(out, s)
 			}
 		}
 	}
