@@ -42,8 +42,12 @@ Windows: download `Connective-6.0-setup.exe` from the release.
 
 ## Verify
 
+The in-app updater refuses anything that is not Ed25519-signed
+(`update-manifest.json.sig`, key `connective-release-1`) and checks the
+SHA-256 of every artifact before it installs. By hand:
+
 ```bash
-sha256sum -c SHA256SUMS
+sha256sum full-6.0.zip   # must equal artifacts[0].sha256 in update-manifest.json
 ```
 
 ## Known limitations

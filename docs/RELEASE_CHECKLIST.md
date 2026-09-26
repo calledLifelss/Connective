@@ -34,3 +34,25 @@
       no surviving root core, TUN/routes/DNS restored (closes §12)
 - [ ] Manual desktop pass: tray minimize/restore, autostart,
       notification bubbles (known gap: desktop notify API unwired)
+
+## 2026-09-26 — v6.0 release pass
+
+- [x] `go test ./...`, `go vet ./...`, `gofmt -l .` clean
+- [x] `flutter analyze --no-fatal-infos` (22 pre-existing style infos,
+      no errors or warnings)
+- [x] `flutter test` 38/38 — run inside a user+network namespace
+      (`unshare -Urn`, loopback up, dummy default route) because the
+      host's own live Connective TUN (`connective0`) trips the
+      daemon's egress check; the lab binary was rebuilt from source
+      first so local runs match CI
+- [x] `flutter build linux --release` locally
+- [x] `release`, `windows` and `ci` green on `v6.0`: RPM, both full
+      zips, `Connective-6.0-windows-x64-setup.exe` and both signed
+      manifests published
+- [x] Signed update fixtures re-keyed to 99.0.0 after they outran the
+      app version at 6.0 (`testdata/updates/README.md` documents
+      re-signing)
+- [ ] Interactive polkit APPROVE/CANCEL, live TUN-takeover + kill
+      switch vs a real VPN, `dnf install → replace → remove`, and the
+      manual desktop pass — still deferred: the operator's live
+      session must not be disrupted
