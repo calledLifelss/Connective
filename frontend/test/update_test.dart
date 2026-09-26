@@ -104,12 +104,12 @@ void main() {
     // Manual check surfaces the fixture release.
     await tester.runAsync(() => store.checkForUpdates());
     await waitState(tester, () => store.updateAvailable);
-    expect(store.updateInfo?.version, '0.9.9');
+    expect(store.updateInfo?.version, '99.0.0');
     await settle(tester);
 
     // Dashboard banner: version + size + actions, non-dominant.
     expect(find.byKey(const Key('update-banner')), findsOneWidget);
-    expect(find.textContaining('0.9.9'), findsWidgets);
+    expect(find.textContaining('99.0.0'), findsWidgets);
 
     // Dialog shows details from backend state.
     await tester.tap(find.byKey(const Key('update-banner-now')));

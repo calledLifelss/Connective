@@ -78,6 +78,15 @@ step-ordering bugs, RPM hyphen-version tarball naming, and a missing
 updater copy step. `ci` is green; `release` progressed stage by stage
 to manifest/sign/publish.
 
+The `v6.0` tag caught fixture rot: the signed update fixtures
+advertised `0.9.9`, which stopped being *newer* than the app the
+moment the version became `6.0`, so four update tests reported
+`no-update` on CI — invisibly green locally, where the lab binary
+still predated the bump. The fixtures were re-keyed and re-signed at
+`99.0.0`, expectations updated, and `testdata/updates/README.md` now
+documents re-signing. Rebuilding the lab binary from current source
+before a local run is what made the failure reproducible.
+
 ## Final state (2026-09-21)
 
 - `v0.2.0` stable published with RPM, full artifact, signed manifest
